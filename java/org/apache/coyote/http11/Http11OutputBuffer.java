@@ -16,9 +16,6 @@
  */
 package org.apache.coyote.http11;
 
-import java.io.IOException;
-import java.nio.ByteBuffer;
-
 import org.apache.coyote.ActionCode;
 import org.apache.coyote.OutputBuffer;
 import org.apache.coyote.Response;
@@ -30,6 +27,9 @@ import org.apache.tomcat.util.buf.MessageBytes;
 import org.apache.tomcat.util.http.HttpMessages;
 import org.apache.tomcat.util.net.SocketWrapperBase;
 import org.apache.tomcat.util.res.StringManager;
+
+import java.io.IOException;
+import java.nio.ByteBuffer;
 
 /**
  * Provides buffering for the HTTP headers (allowing responses to be reset
@@ -118,6 +118,8 @@ public class Http11OutputBuffer implements OutputBuffer {
         this.response = response;
         this.sendReasonPhrase = sendReasonPhrase;
 
+        // headerBufferSize可以在server.xml文件中的Connector标签下，通过maxHttpHeaderSize去设置，默认值为8K，不要设置太大，因为Tomcat
+        // 使用的对象池技术会将这些对象存储在内存中，且不会回收
         headerBuffer = ByteBuffer.allocate(headerBufferSize);
 
         filterLibrary = new OutputFilter[0];

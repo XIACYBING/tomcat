@@ -16,19 +16,6 @@
  */
 package org.apache.catalina.connector;
 
-import java.io.IOException;
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
-import java.util.EnumSet;
-import java.util.concurrent.atomic.AtomicBoolean;
-
-import javax.servlet.ReadListener;
-import javax.servlet.RequestDispatcher;
-import javax.servlet.ServletException;
-import javax.servlet.SessionTrackingMode;
-import javax.servlet.WriteListener;
-import javax.servlet.http.HttpServletResponse;
-
 import org.apache.catalina.Authenticator;
 import org.apache.catalina.Context;
 import org.apache.catalina.Host;
@@ -52,6 +39,18 @@ import org.apache.tomcat.util.http.ServerCookies;
 import org.apache.tomcat.util.net.SSLSupport;
 import org.apache.tomcat.util.net.SocketEvent;
 import org.apache.tomcat.util.res.StringManager;
+
+import javax.servlet.ReadListener;
+import javax.servlet.RequestDispatcher;
+import javax.servlet.ServletException;
+import javax.servlet.SessionTrackingMode;
+import javax.servlet.WriteListener;
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.util.EnumSet;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 
 /**
@@ -331,6 +330,7 @@ public class CoyoteAdapter implements Adapter {
         req.getRequestProcessor().setWorkerThreadName(THREAD_NAME.get());
 
         try {
+            // 在HttpHeader解析完成后进行必要的处理，比如Host、Context、Wrapper和Servlet的处理就是在这里完成的，并在处理完成后返回true
             // Parse and set Catalina and configuration specific
             // request parameters
             postParseSuccess = postParseRequest(req, request, res, response);
@@ -338,6 +338,8 @@ public class CoyoteAdapter implements Adapter {
                 //check valves if we support async
                 request.setAsyncSupported(
                         connector.getService().getContainer().getPipeline().isAsyncSupported());
+
+                // 开始进行处理，在此处进行对应的Servlet调用
                 // Calling the container
                 connector.getService().getContainer().getPipeline().getFirst().invoke(
                         request, response);
@@ -675,10 +677,13 @@ public class CoyoteAdapter implements Adapter {
         boolean mapRequired = true;
 
         while (mapRequired) {
+
+            // 根据请求筛选Host、Context、Wrapper和Servlet，用于后面的执行处理
             // This will map the the latest version by default
             connector.getService().getMapper().map(serverName, decodedURI,
                     version, request.getMappingData());
 
+            // 未发现的处理
             // If there is no context at this point, it is likely no ROOT context
             // has been deployed
             if (request.getContext() == null) {
@@ -693,6 +698,7 @@ public class CoyoteAdapter implements Adapter {
                 return false;
             }
 
+            // 转换sessionId，redirect/跳转时也转发sessionId
             // Now we have the context, we can parse the session ID from the URL
             // (if any). Need to do this before we redirect in case we need to
             // include the session id in the redirect
