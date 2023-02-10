@@ -16,15 +16,6 @@
  */
 package org.apache.catalina.mapper;
 
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
-
 import org.apache.catalina.Context;
 import org.apache.catalina.Host;
 import org.apache.catalina.WebResource;
@@ -37,6 +28,15 @@ import org.apache.tomcat.util.buf.Ascii;
 import org.apache.tomcat.util.buf.CharChunk;
 import org.apache.tomcat.util.buf.MessageBytes;
 import org.apache.tomcat.util.res.StringManager;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Mapper, which implements the servlet API mapping rules (which are derived
@@ -743,6 +743,7 @@ public final class Mapper {
         uri.setLimit(-1);
 
         // Virtual host mapping
+        // 筛选Host映射
         MappedHost[] hosts = this.hosts;
         MappedHost mappedHost = exactFindIgnoreCase(hosts, host);
         if (mappedHost == null) {
@@ -769,6 +770,7 @@ public final class Mapper {
         mappingData.host = mappedHost.object;
 
         // Context mapping
+        // 筛选Context映射
         ContextList contextList = mappedHost.contextList;
         MappedContext[] contexts = contextList.contexts;
         int pos = find(contexts, uri);
@@ -816,6 +818,7 @@ public final class Mapper {
 
         mappingData.contextPath.setString(context.name);
 
+        // Context version筛选 todo contextVersion是什么？
         ContextVersion contextVersion = null;
         ContextVersion[] contextVersions = context.versions;
         final int versionCount = contextVersions.length;
@@ -1052,6 +1055,8 @@ public final class Mapper {
      */
     private final void internalMapExactWrapper
         (MappedWrapper[] wrappers, CharChunk path, MappingData mappingData) {
+
+        // 获取映射的wrapper，包含对应的servlet
         MappedWrapper wrapper = exactFind(wrappers, path);
         if (wrapper != null) {
             mappingData.requestPath.setString(wrapper.name);

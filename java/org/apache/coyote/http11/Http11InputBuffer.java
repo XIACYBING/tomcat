@@ -16,11 +16,6 @@
  */
 package org.apache.coyote.http11;
 
-import java.io.EOFException;
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-
 import org.apache.coyote.InputBuffer;
 import org.apache.coyote.Request;
 import org.apache.juli.logging.Log;
@@ -32,6 +27,11 @@ import org.apache.tomcat.util.http.parser.HttpParser;
 import org.apache.tomcat.util.net.ApplicationBufferHandler;
 import org.apache.tomcat.util.net.SocketWrapperBase;
 import org.apache.tomcat.util.res.StringManager;
+
+import java.io.EOFException;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 
 /**
  * InputBuffer for HTTP that provides request header parsing as well as transfer
@@ -675,10 +675,17 @@ public class Http11InputBuffer implements InputBuffer, ApplicationBufferHandler 
     void init(SocketWrapperBase<?> socketWrapper) {
 
         wrapper = socketWrapper;
+
+        // 设置SocketWrapper和当前ReadBufferHandler的关联
         wrapper.setAppReadBufHandler(this);
 
+        // 计算inputBuffer大小
+        // headerBufferSize可以在server.xml文件中的Connector标签下，通过maxHttpHeaderSize去设置，默认值为8K，不要设置太大，因为Tomcat
+        // 使用的对象池技术会将这些对象存储在内存中，且不会回收
         int bufLength = headerBufferSize +
                 wrapper.getSocketBufferHandler().getReadBuffer().capacity();
+
+        // byteBuffer为空，或者大小不足，则需要重新分配控制空间
         if (byteBuffer == null || byteBuffer.capacity() < bufLength) {
             byteBuffer = ByteBuffer.allocate(bufLength);
             byteBuffer.position(0).limit(0);

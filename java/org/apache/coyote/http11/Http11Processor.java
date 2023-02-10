@@ -16,17 +16,6 @@
  */
 package org.apache.coyote.http11;
 
-import java.io.IOException;
-import java.io.InterruptedIOException;
-import java.nio.ByteBuffer;
-import java.util.Enumeration;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
-import java.util.regex.Pattern;
-
-import javax.servlet.http.HttpServletResponse;
-
 import org.apache.coyote.AbstractProcessor;
 import org.apache.coyote.ActionCode;
 import org.apache.coyote.ErrorState;
@@ -62,6 +51,16 @@ import org.apache.tomcat.util.net.SendfileKeepAliveState;
 import org.apache.tomcat.util.net.SendfileState;
 import org.apache.tomcat.util.net.SocketWrapperBase;
 import org.apache.tomcat.util.res.StringManager;
+
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.io.InterruptedIOException;
+import java.nio.ByteBuffer;
+import java.util.Enumeration;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 public class Http11Processor extends AbstractProcessor {
 
@@ -661,13 +660,24 @@ public class Http11Processor extends AbstractProcessor {
     public SocketState service(SocketWrapperBase<?> socketWrapper)
         throws IOException {
         RequestInfo rp = request.getRequestProcessor();
+
+        // 设置当前请求的处理阶段为parse
         rp.setStage(org.apache.coyote.Constants.STAGE_PARSE);
 
         // Setting up the I/O
         setSocketWrapper(socketWrapper);
+
+        // 根据SocketWrapper初始化inputBuffer和outputBuffer
+
+        // inputBuffer初始化时为了确保请求头和请求数据的承载，会初始化一块内存地址来存放相关数据
         inputBuffer.init(socketWrapper);
+
+        // outputBuffer的初始化只是将SocketWrapper设置进去
+        // 响应头的内存块在outputBuffer的构造器方法中，就会根据maxHttpHeaderSize去分配
+        // 响应数据则是会通过调用outputBuffer的doWrite方法，直接通过socketWrapper写入到对应的Channel的ByteBuffer中，无需中间的内存块去承载
         outputBuffer.init(socketWrapper);
 
+        // 相关flag初始化
         // Flags
         keepAlive = true;
         openSocket = false;
@@ -680,6 +690,8 @@ public class Http11Processor extends AbstractProcessor {
 
             // Parsing the request header
             try {
+
+                // 转换请求头
                 if (!inputBuffer.parseRequestLine(keptAlive)) {
                     if (inputBuffer.getParsingRequestLinePhase() == -1) {
                         return SocketState.UPGRADING;
