@@ -41,3 +41,6 @@ java/org/apache/catalina/startup/catalina.properties
 modules/jdbc-pool/bin
 modules/jdbc-pool/includes
 webapps/docs/jdbc-pool.xml
+
+# 排除编译生成的target
+/target
