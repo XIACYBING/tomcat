@@ -32,6 +32,7 @@ import org.apache.catalina.LifecycleException;
 import org.apache.catalina.LifecycleState;
 import org.apache.catalina.Service;
 import org.apache.catalina.core.AprLifecycleListener;
+import org.apache.catalina.startup.Catalina;
 import org.apache.catalina.util.LifecycleMBeanBase;
 import org.apache.coyote.Adapter;
 import org.apache.coyote.ProtocolHandler;
@@ -47,6 +48,14 @@ import org.apache.tomcat.util.res.StringManager;
 
 
 /**
+ *
+ * 连接器的实现，连接器的作用是监听网络请求，输出Tomcat请求，并调用容器{@link org.apache.catalina.Container}处理请求
+ *
+ * 其中，监听网络请求由{@link #protocolHandler}实现，根据协议转换字节流，并调用容器处理请求，由{@link #adapter}实现
+ *
+ * 而在Tomcat启动时，{@link Catalina#load()}阶段解析{@code server.xml}文件后，生成对应的{@link Connector}，然后在启动时{@link #initInternal()}
+ * ，会将{@link #adapter}、{@link #protocolHandler}和{@link Connector}自身相互关联
+ *
  * Implementation of a Coyote connector.
  *
  * @author Craig R. McClanahan

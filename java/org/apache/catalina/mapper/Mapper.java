@@ -840,6 +840,7 @@ public final class Mapper {
         mappingData.context = contextVersion.object;
         mappingData.contextSlashCount = contextVersion.slashCount;
 
+        // Wrapper映射，Wrapper中包含着对应的Servlet
         // Wrapper mapping
         if (!contextVersion.isPaused()) {
             internalMapWrapper(contextVersion, uri, mappingData);

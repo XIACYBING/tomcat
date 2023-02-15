@@ -16,10 +16,10 @@
  */
 package org.apache.catalina.core;
 
-import java.io.IOException;
-import java.security.Principal;
-import java.security.PrivilegedActionException;
-import java.util.Set;
+import org.apache.catalina.Globals;
+import org.apache.catalina.security.SecurityUtil;
+import org.apache.tomcat.util.ExceptionUtils;
+import org.apache.tomcat.util.res.StringManager;
 
 import javax.servlet.Filter;
 import javax.servlet.FilterChain;
@@ -29,11 +29,10 @@ import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-
-import org.apache.catalina.Globals;
-import org.apache.catalina.security.SecurityUtil;
-import org.apache.tomcat.util.ExceptionUtils;
-import org.apache.tomcat.util.res.StringManager;
+import java.io.IOException;
+import java.security.Principal;
+import java.security.PrivilegedActionException;
+import java.util.Set;
 
 /**
  * Implementation of <code>javax.servlet.FilterChain</code> used to manage
@@ -42,11 +41,19 @@ import org.apache.tomcat.util.res.StringManager;
  * <code>doFilter()</code> will execute the servlet's <code>service()</code>
  * method itself.
  *
+ * 当前过滤器链，会在整个过滤链路中传递，每个过滤器处理完成后，可以选择中断过滤（某些异常情况），也可以选择调用过滤器链的chain.doFilter方法，继续执行下一个过滤
+ *
+ * 和常规的多个过滤器直接连接，然后过滤器内部调用下一个过滤器的常规模式不同，当前过滤器链路的执行模式是：filterChain -> filter ->
+ * filterChain -> filter -> ... -> filterChain -> servlet，过滤器执行完过滤逻辑后，会调用{@link FilterChain#doFilter}方法，
+ * 让 {@link FilterChain}去调用下一个{@link Filter#doFilter}方法进行过滤
+ *
  * @author Craig R. McClanahan
  */
 public final class ApplicationFilterChain implements FilterChain {
 
-    // Used to enforce requirements of SRV.8.2 / SRV.14.2.5.1
+    /**
+     * Used to enforce requirements of SRV.8.2 / SRV.14.2.5.1
+     */
     private static final ThreadLocal<ServletRequest> lastServicedRequest;
     private static final ThreadLocal<ServletResponse> lastServicedResponse;
 
@@ -153,14 +160,15 @@ public final class ApplicationFilterChain implements FilterChain {
                 );
             } catch( PrivilegedActionException pe) {
                 Exception e = pe.getException();
-                if (e instanceof ServletException)
+                if (e instanceof ServletException) {
                     throw (ServletException) e;
-                else if (e instanceof IOException)
+                } else if (e instanceof IOException) {
                     throw (IOException) e;
-                else if (e instanceof RuntimeException)
+                } else if (e instanceof RuntimeException) {
                     throw (RuntimeException) e;
-                else
+                } else {
                     throw new ServletException(e.getMessage(), e);
+                }
             }
         } else {
             internalDoFilter(request,response);
@@ -171,6 +179,7 @@ public final class ApplicationFilterChain implements FilterChain {
                                   ServletResponse response)
         throws IOException, ServletException {
 
+        // pos代表当前要执行的过滤器在filters数组中的索引，n代表当前总共有多少个过滤器，pos < n代表当前还有需要执行的过滤器，如果pos >= n，说明当前已经没有需要执行的过滤器了，则进入Servlet的处理
         // Call the next filter if there is one
         if (pos < n) {
             ApplicationFilterConfig filterConfig = filters[pos++];
@@ -202,6 +211,7 @@ public final class ApplicationFilterChain implements FilterChain {
             return;
         }
 
+        // 进入Servlet的处理
         // We fell off the end of the chain -- call the servlet instance
         try {
             if (ApplicationDispatcher.WRAP_SAME_OBJECT) {
@@ -228,6 +238,8 @@ public final class ApplicationFilterChain implements FilterChain {
                                            args,
                                            principal);
             } else {
+
+                // 执行Servlet的处理
                 servlet.service(request, response);
             }
         } catch (IOException | ServletException | RuntimeException e) {

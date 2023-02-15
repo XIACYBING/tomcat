@@ -16,6 +16,12 @@
  */
 package org.apache.tomcat.util.net;
 
+import org.apache.coyote.AbstractProcessor;
+import org.apache.coyote.AbstractProcessorLight;
+import org.apache.coyote.Adapter;
+import org.apache.coyote.Processor;
+import org.apache.coyote.ajp.AjpProcessor;
+import org.apache.coyote.http11.Http11Processor;
 import org.apache.juli.logging.Log;
 import org.apache.tomcat.util.ExceptionUtils;
 import org.apache.tomcat.util.IntrospectionUtils;
@@ -46,6 +52,33 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
 /**
+ * 通信端点，进行Socket接收和发送的处理器，是对传输层的抽象，对TCP/IP协议的实现
+ *
+ * 其中对Socket连接请求的监听主要由{@link Acceptor}来实现，对Socket请求的处理则是由{@link SocketProcessorBase}实现
+ *
+ * 具体处理流程如下：
+ * 1、{@link Acceptor#run()}监听Socket请求，并在监听到请求后会进行一系列的处理
+ *
+ * 2、在{@link #createSocketProcessor}中将Socket请求包装成{@link SocketProcessorBase}，交给线程池{@link #executor}处理
+ *  2.1、{@link SocketProcessorBase}继承{@link Runnable}，所以交给线程池处理时，实际上执行的是{@link SocketProcessorBase#run()}，更具体的说，其实是
+ *  {@link SocketProcessorBase#doRun()}；
+ *  2.2、{@link SocketProcessorBase}一般实现在具体的{@link AbstractEndpoint}实现类中，比如{@link NioEndpoint.SocketProcessor}、
+ *  {@link AprEndpoint.SocketProcessor}和{@link Nio2Endpoint.SocketProcessor}
+ *
+ * 3、在{@link SocketProcessorBase#doRun()}中，根据{@link #getHandler()}获取对应的{@link Handler}进行处理，在{@link Handler#process}
+ * 方法中会获取具体的{@link Processor}进行应用层的协议处理
+ *  3.1、流程：{@link SocketProcessorBase#doRun()} -> {@link #getHandler()} -> {@link Handler#process} ->
+ *  {@link Processor#process}
+ *  3.2：不同的应用层会有不同的{@link Processor}实现，比如最典型的{@link Http11Processor}和{@link AjpProcessor}
+ *
+ * 4、在{@link Processor#process}中，会根据不同协议处理字节流，处理完成后，根据{@link AbstractProcessor#getAdapter()}获取对应的适配器进行处理
+ *  4.1、处理字节流和获取Adapter，都是在{@link AbstractProcessorLight#service}中完成的
+ *  4.2、{@link AbstractProcessor#getAdapter()}获取到的{@link Adapter}，作用是将Tomcat的{@link org.apache.coyote.Request}转换成标准的
+ *  {@link javax.servlet.ServletRequest}，是在{@link Adapter#service}中处理的
+ *
+ * 总而言之，{@link AbstractEndpoint}的作用是将网络请求的字节流转换成Tomcat的请求{@link org.apache.coyote.Request}，{@link Adapter}
+ * 的作用则是将Tomcat的请求转换为标签的Servlet请求{@link org.apache.coyote.Request}，并交给容器去处理
+ *
  * @param <S> The type for the sockets managed by this endpoint.
  *
  * @author Mladen Turk

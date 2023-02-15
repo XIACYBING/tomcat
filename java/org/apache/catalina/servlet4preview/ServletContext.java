@@ -16,10 +16,24 @@
  */
 package org.apache.catalina.servlet4preview;
 
+import org.apache.catalina.core.StandardContext;
+
 import javax.servlet.ServletContextEvent;
 import javax.servlet.ServletContextListener;
 import javax.servlet.ServletRegistration;
 
+/**
+ * {@link javax.servlet.ServletContext}代表Web应用的上下文环境，而Tomcat的{@link org.apache.catalina.Context}容器则是代表一个Web
+ * 应用程序，所以前者是后者的一个成员变量；
+ *
+ * 对于Spring框架的ApplicationContext来说，Spring是通过增加感知Tomcat上下文加载的监听器{@code org.springframework.web.context
+ * .ContextLoaderListener}来初始化Spring的ApplicationContext，并将ApplicationContext存储到{@link javax.servlet.ServletContext}
+ *
+ * {@link javax.servlet.ServletContext}存储{@code org.springframework.context.ApplicationContext}的部分：
+ * {@code {@code servletContext.setAttribute(WebApplicationContext.ROOT_WEB_APPLICATION_CONTEXT_ATTRIBUTE, this.context);}}
+ *
+ * {@link org.apache.catalina.Context}存储{@link ServletContext}的部分：{@link StandardContext#context}
+ */
 public interface ServletContext extends javax.servlet.ServletContext {
 
     /**

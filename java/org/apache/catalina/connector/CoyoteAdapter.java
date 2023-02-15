@@ -330,7 +330,7 @@ public class CoyoteAdapter implements Adapter {
         req.getRequestProcessor().setWorkerThreadName(THREAD_NAME.get());
 
         try {
-            // 在HttpHeader解析完成后进行必要的处理，比如Host、Context、Wrapper和Servlet的处理就是在这里完成的，并在处理完成后返回true
+            // 在HttpHeader解析完成后进行必要的处理，比如Host、Context、Wrapper和Servlet的映射就是在这里完成的，并在处理完成后返回true
             // Parse and set Catalina and configuration specific
             // request parameters
             postParseSuccess = postParseRequest(req, request, res, response);

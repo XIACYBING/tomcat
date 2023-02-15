@@ -16,14 +16,38 @@
  */
 package org.apache.coyote;
 
+import org.apache.catalina.Context;
+import org.apache.catalina.Host;
+import org.apache.catalina.Pipeline;
+import org.apache.catalina.Valve;
+import org.apache.catalina.Wrapper;
+import org.apache.catalina.connector.CoyoteAdapter;
+import org.apache.catalina.mapper.Mapper;
+import org.apache.coyote.http11.Http11InputBuffer;
 import org.apache.tomcat.util.net.SocketEvent;
+
+import javax.servlet.Servlet;
 
 /**
  * Adapter. This represents the entry point in a coyote-based servlet container.
  *
+ * 适配器Adapter的主要作用：是接收Tomcat的请求{@link Request}，转换成标准的Servlet请求{@link javax.servlet.ServletRequest}
+ *
+ * 1、映射{@link Host}、{@link Context}、{@link Wrapper}和{@link Servlet}：{@link CoyoteAdapter#service} ->
+ * {@link CoyoteAdapter#postParseRequest} ->
+ * {@link Mapper#map(org.apache.tomcat.util.buf.MessageBytes, org.apache.tomcat.util.buf.MessageBytes, java.lang.String, org.apache.catalina.mapper.MappingData)}
+ *
+ * 2、转换请求：{@link CoyoteAdapter#service}
+ *  2.1、请求头的转换：请求头实际存储在{@link Request#headers}中，但是会在{@link Http11InputBuffer#Http11InputBuffer}中
+ *  通过{@code headers = request.getMimeHeaders();}赋值给{@link Http11InputBuffer#headers}，最后在{@link Http11InputBuffer#parseHeader()}进行请求头的转换和赋值
+ *
+ * 3、处理请求：在{@link CoyoteAdapter#service}中会转换请求，并映射容器（{@link Host}、{@link Context}、{@link Wrapper}
+ * ），容器映射完成后，会获取容器内的{@link Pipeline}进行处理，容器对请求的处理一般都是在{@link Pipeline}的{@link Valve}中处理的，比如
+ * {@link org.apache.catalina.core.StandardHostValve}、{@link org.apache.catalina.core.StandardContextValve}、{@link org.apache.catalina.core.StandardWrapperValve}
  *
  * @author Remy Maucherat
  * @see ProtocolHandler
+ * @see CoyoteAdapter
  */
 public interface Adapter {
 

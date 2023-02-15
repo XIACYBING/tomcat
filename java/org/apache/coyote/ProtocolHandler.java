@@ -16,9 +16,10 @@
  */
 package org.apache.coyote;
 
-import java.util.concurrent.Executor;
-
+import org.apache.tomcat.util.net.AbstractEndpoint;
 import org.apache.tomcat.util.net.SSLHostConfig;
+
+import java.util.concurrent.Executor;
 
 /**
  * Abstract the protocol implementation, including threading, etc.
@@ -28,6 +29,10 @@ import org.apache.tomcat.util.net.SSLHostConfig;
  * This is the main interface to be implemented by a coyote connector.
  * Adapter is the main interface to be implemented by a coyote servlet
  * container.
+ *
+ * ProtocolHandler聚合{@link AbstractEndpoint}和{@link Processor}，主要作用是将网络请求字节流转换为Tomcat请求{@link Request}
+ * @see AbstractEndpoint
+ * @see Processor
  *
  * @author Remy Maucherat
  * @author Costin Manolache

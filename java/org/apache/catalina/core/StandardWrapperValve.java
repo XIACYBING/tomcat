@@ -163,10 +163,14 @@ final class StandardWrapperValve
 
         MessageBytes requestPathMB = request.getRequestPathMB();
         DispatcherType dispatcherType = DispatcherType.REQUEST;
-        if (request.getDispatcherType()==DispatcherType.ASYNC) dispatcherType = DispatcherType.ASYNC;
+        if (request.getDispatcherType()==DispatcherType.ASYNC) {
+            dispatcherType = DispatcherType.ASYNC;
+        }
         request.setAttribute(Globals.DISPATCHER_TYPE_ATTR,dispatcherType);
         request.setAttribute(Globals.DISPATCHER_REQUEST_PATH_ATTR,
                 requestPathMB);
+
+        // 根据Servlet创建过滤器链路，进行过滤后执行对应的servlet的请求
         // Create the filter chain for this request
         ApplicationFilterChain filterChain =
                 ApplicationFilterFactory.createFilterChain(request, wrapper, servlet);
@@ -182,6 +186,8 @@ final class StandardWrapperValve
                         if (request.isAsyncDispatching()) {
                             request.getAsyncContextInternal().doInternalDispatch();
                         } else {
+
+                            // 执行过滤，完成过滤后执行Servlet方法
                             filterChain.doFilter(request.getRequest(),
                                     response.getResponse());
                         }
@@ -249,6 +255,7 @@ final class StandardWrapperValve
             exception(request, response, e);
         }
 
+        // 释放过滤器链路
         // Release the filter chain (if any) for this request
         if (filterChain != null) {
             filterChain.release();

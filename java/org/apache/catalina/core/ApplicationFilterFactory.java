@@ -16,14 +16,14 @@
  */
 package org.apache.catalina.core;
 
-import javax.servlet.DispatcherType;
-import javax.servlet.Servlet;
-import javax.servlet.ServletRequest;
-
 import org.apache.catalina.Globals;
 import org.apache.catalina.Wrapper;
 import org.apache.catalina.connector.Request;
 import org.apache.tomcat.util.descriptor.web.FilterMap;
+
+import javax.servlet.DispatcherType;
+import javax.servlet.Servlet;
+import javax.servlet.ServletRequest;
 
 /**
  * Factory for the creation and caching of Filters and creation
@@ -54,9 +54,11 @@ public final class ApplicationFilterFactory {
             Wrapper wrapper, Servlet servlet) {
 
         // If there is no servlet to execute, return null
-        if (servlet == null)
+        if (servlet == null) {
             return null;
+        }
 
+        // 初始化过滤器链FilterChain
         // Create and initialize a filter chain object
         ApplicationFilterChain filterChain = null;
         if (request instanceof Request) {
@@ -76,21 +78,26 @@ public final class ApplicationFilterFactory {
             filterChain = new ApplicationFilterChain();
         }
 
+        // 设置Servlet和异步支持
         filterChain.setServlet(servlet);
         filterChain.setServletSupportsAsync(wrapper.isAsyncSupported());
 
+        // 从Context容器中获取过滤器映射信息集合
         // Acquire the filter mappings for this Context
         StandardContext context = (StandardContext) wrapper.getParent();
-        FilterMap filterMaps[] = context.findFilterMaps();
+        FilterMap[] filterMaps = context.findFilterMaps();
 
+        // 如果没有过滤器映射信息，可以直接返回初始化的过滤器链（无过滤器）
         // If there are no filter mappings, we are done
-        if ((filterMaps == null) || (filterMaps.length == 0))
+        if ((filterMaps == null) || (filterMaps.length == 0)) {
             return (filterChain);
+        }
 
         // Acquire the information we will need to match filter mappings
         DispatcherType dispatcher =
                 (DispatcherType) request.getAttribute(Globals.DISPATCHER_TYPE_ATTR);
 
+        // 获取url
         String requestPath = null;
         Object attribute = request.getAttribute(Globals.DISPATCHER_REQUEST_PATH_ATTR);
         if (attribute != null){
@@ -100,34 +107,52 @@ public final class ApplicationFilterFactory {
         String servletName = wrapper.getName();
 
         // Add the relevant path-mapped filters to this filter chain
-        for (int i = 0; i < filterMaps.length; i++) {
-            if (!matchDispatcher(filterMaps[i] ,dispatcher)) {
+        for (FilterMap filterMap : filterMaps) {
+
+            // 过滤器匹配调度信息
+            if (!matchDispatcher(filterMap, dispatcher)) {
                 continue;
             }
-            if (!matchFiltersURL(filterMaps[i], requestPath))
+
+            // 过滤器匹配url
+            if (!matchFiltersURL(filterMap, requestPath)) {
                 continue;
-            ApplicationFilterConfig filterConfig = (ApplicationFilterConfig)
-                context.findFilterConfig(filterMaps[i].getFilterName());
+            }
+
+            // 获取过滤器信息配置信息
+            ApplicationFilterConfig filterConfig =
+                (ApplicationFilterConfig)context.findFilterConfig(filterMap.getFilterName());
             if (filterConfig == null) {
                 // FIXME - log configuration problem
                 continue;
             }
+
+            // 添加过滤器
             filterChain.addFilter(filterConfig);
         }
 
         // Add filters that match on servlet name second
-        for (int i = 0; i < filterMaps.length; i++) {
-            if (!matchDispatcher(filterMaps[i] ,dispatcher)) {
+        for (FilterMap filterMap : filterMaps) {
+
+            // 过滤器匹配调度信息
+            if (!matchDispatcher(filterMap, dispatcher)) {
                 continue;
             }
-            if (!matchFiltersServlet(filterMaps[i], servletName))
+
+            // 过滤器匹配Servlet名称
+            if (!matchFiltersServlet(filterMap, servletName)) {
                 continue;
-            ApplicationFilterConfig filterConfig = (ApplicationFilterConfig)
-                context.findFilterConfig(filterMaps[i].getFilterName());
+            }
+
+            // 获取过滤器信息配置信息
+            ApplicationFilterConfig filterConfig =
+                (ApplicationFilterConfig)context.findFilterConfig(filterMap.getFilterName());
             if (filterConfig == null) {
                 // FIXME - log configuration problem
                 continue;
             }
+
+            // 添加过滤器
             filterChain.addFilter(filterConfig);
         }
 
