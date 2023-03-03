@@ -27,6 +27,8 @@ public class ExceptionUtils {
     /**
      * Checks whether the supplied Throwable is one that needs to be
      * rethrown and swallows all others.
+     *
+     * 对于非{@link ThreadDeath}和非{@link VirtualMachineError}的{@link Throwable}，沉默处理
      * @param t the Throwable to check
      */
     public static void handleThrowable(Throwable t) {

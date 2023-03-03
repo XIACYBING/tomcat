@@ -51,6 +51,7 @@ import org.apache.catalina.Globals;
 import org.apache.catalina.Host;
 import org.apache.catalina.Lifecycle;
 import org.apache.catalina.LifecycleException;
+import org.apache.catalina.LifecycleListener;
 import org.apache.catalina.LifecycleState;
 import org.apache.catalina.Loader;
 import org.apache.catalina.Pipeline;
@@ -123,6 +124,30 @@ import org.apache.tomcat.util.res.StringManager;
  * </table>
  * Subclasses that fire additional events should document them in the
  * class comments of the implementation class.
+ *
+ * {@link ContainerBase}主要是对{@link Container}通用逻辑的一些实现，主要是以下逻辑的实现：
+ *
+ * 1、容器结构的管理
+ *  {@link #setParent}
+ *  {@link #getParent()}
+ *  {@link #addChild}
+ *  {@link #findChild}
+ *  {@link #findChildren()}
+ *  {@link #removeChild}
+ *
+ * 2、容器生命周期管理
+ *  {@link #initInternal()}
+ *  {@link #startInternal()}
+ *  {@link #stopInternal()}
+ *  {@link #destroyInternal()}
+ *
+ * 4、容器事件监听器管理和发布
+ *  {@link #addContainerListener}
+ *  {@link #removeContainerListener}
+ *  {@link #findContainerListeners}
+ *  {@link #fireContainerEvent}
+ *
+ * 5、容器属性的管理：其他的方法大都属于这类
  *
  * @author Craig R. McClanahan
  */
@@ -1200,10 +1225,15 @@ public abstract class ContainerBase extends LifecycleMBeanBase
     @Override
     public void fireContainerEvent(String type, Object data) {
 
-        if (listeners.size() < 1)
+        // 如果没有监听器，则不处理
+        if (listeners.size() < 1) {
             return;
+        }
 
+        // 生成事件
         ContainerEvent event = new ContainerEvent(this, type, data);
+
+        // 按顺序给各个监听器发布事件
         // Note for each uses an iterator internally so this is safe
         for (ContainerListener listener : listeners) {
             listener.containerEvent(event);
