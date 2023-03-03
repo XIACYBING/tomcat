@@ -28,6 +28,8 @@ import javax.servlet.ServletRequest;
 import javax.servlet.ServletSecurityElement;
 import javax.servlet.descriptor.JspConfigDescriptor;
 
+import org.apache.catalina.core.ApplicationContext;
+import org.apache.catalina.core.StandardContext;
 import org.apache.catalina.deploy.NamingResourcesImpl;
 import org.apache.tomcat.ContextBind;
 import org.apache.tomcat.InstanceManager;
@@ -55,6 +57,20 @@ import org.apache.tomcat.util.http.CookieProcessor;
  * The child containers attached to a Context are generally implementations
  * of Wrapper (representing individual servlet definitions).
  * <p>
+ *
+ * {@link Context}、{@link ServletContext}和{@code org.springframework.context.ApplicationContext}的区别和关系
+ *  区别：
+ *   {@link Context}：是Web应用的上下文，是Tomcat容器的一层（{@link Engine} > {@link Context} > {@link Host} > {@link Wrapper}），包含着对应Web应用的相关信息
+ *   {@link ServletContext}：{@link javax.servlet.Servlet}的上下文，被Web应用下的{@link javax.servlet.Servlet}共享
+ *   {@code org.springframework.context.ApplicationContext}：Spring应用的上下文，在Tomcat中的Servlet初始化完成后时，会通过配置的{@code org
+ *   .springframework.web.context.ContextLoaderListener}（实现了{@link javax.servlet.ServletContextListener}）初始化，并通过
+ *   {@link ServletContext#setAttribute}关联到{@link ServletContext}
+ *
+ *  关系：三者是包含的关系；
+ *   {@link Context}的默认实现的属性{@link StandardContext#context}即是{@link ServletContext}的默认实现{@link ApplicationContext}；
+ *   {@code org.springframework.context.ApplicationContext}则是会通过{@link javax.servlet.ServletContextListener}
+ *   的实现类{@code org.springframework.web.context.ContextLoaderListener}，关联到{@link ApplicationContext#attributes}中
+ *   （{@code servletContext.setAttribute(WebApplicationContext.ROOT_WEB_APPLICATION_CONTEXT_ATTRIBUTE, this.context);}）
  *
  * @author Craig R. McClanahan
  */
