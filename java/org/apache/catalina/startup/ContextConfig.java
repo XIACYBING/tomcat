@@ -219,6 +219,8 @@ public class ContextConfig implements LifecycleListener {
     /**
      * Map of Types to ServletContainerInitializer that are interested in those
      * types.
+     *
+     * 初始化器映射，key为{@link HandlesTypes}注解配置的类，value为有通过注解配置对应类的ServletContainerInitializer集合
      */
     protected final Map<Class<?>, Set<ServletContainerInitializer>> typeInitializerMap =
             new HashMap<>();
@@ -226,12 +228,16 @@ public class ContextConfig implements LifecycleListener {
     /**
      * Flag that indicates if at least one {@link HandlesTypes} entry is present
      * that represents an annotation.
+     *
+     * 如果为true，说明最少一个{@link HandlesTypes}注解配置的类是注解类型
      */
     protected boolean handlesTypesAnnotations = false;
 
     /**
      * Flag that indicates if at least one {@link HandlesTypes} entry is present
      * that represents a non-annotation.
+     *
+     * 如果为true，说明最少一个{@link HandlesTypes}注解配置的类不是注解类型
      */
     protected boolean handlesTypesNonAnnotations = false;
 
@@ -1157,6 +1163,7 @@ public class ContextConfig implements LifecycleListener {
                 }
             }
 
+            // 处理JARs中的容器和@HandlesTypes
             // Step 5. Process JARs for annotations and
             // @HandlesTypes matches - only need to process those fragments we
             // are going to use (remember orderedFragments includes any
@@ -1223,6 +1230,8 @@ public class ContextConfig implements LifecycleListener {
         // Step 11. Apply the ServletContainerInitializer config to the
         // context
         if (ok) {
+
+            // 循环初始化器类，将ServletContainerInitializer的配置添加到Context容器中
             for (Map.Entry<ServletContainerInitializer,
                     Set<Class<?>>> entry :
                         initializerClassMap.entrySet()) {
@@ -1620,6 +1629,8 @@ public class ContextConfig implements LifecycleListener {
 
         List<ServletContainerInitializer> detectedScis;
         try {
+
+            // 通过SPI机制加载到所有Jar包下的javax.servlet.ServletContainerInitializer配置，并将他们实例化
             WebappServiceLoader<ServletContainerInitializer> loader = new WebappServiceLoader<>(context);
             detectedScis = loader.load(ServletContainerInitializer.class);
         } catch (IOException e) {
@@ -1631,11 +1642,16 @@ public class ContextConfig implements LifecycleListener {
             return;
         }
 
+        // 循环加载到的ServletContainerInitializer，处理HandlerType注解
         for (ServletContainerInitializer sci : detectedScis) {
+
+            // 建立ServletContainerInitializer和空集合的映射
             initializerClassMap.put(sci, new HashSet<Class<?>>());
 
             HandlesTypes ht;
             try {
+
+                // 获取类上配置的HandlesTypes注解
                 ht = sci.getClass().getAnnotation(HandlesTypes.class);
             } catch (Exception e) {
                 if (log.isDebugEnabled()) {
@@ -1646,28 +1662,43 @@ public class ContextConfig implements LifecycleListener {
                     log.info(sm.getString("contextConfig.sci.info",
                             sci.getClass().getName()));
                 }
+
+                // 异常情况下不处理，直接continue
                 continue;
             }
+
+            // 没有注解也不处理，直接continue
             if (ht == null) {
                 continue;
             }
+
+            // 获取HandlesTypes注解上配置的类，如果没配置直接continue
             Class<?>[] types = ht.value();
             if (types == null) {
                 continue;
             }
 
+            // 循环类数组，建立注解上的配置类，和配置对象的映射
             for (Class<?> type : types) {
+
+                // 标注handlesTypes配置的类中，是否有注解和非注解类型的
                 if (type.isAnnotation()) {
                     handlesTypesAnnotations = true;
                 } else {
                     handlesTypesNonAnnotations = true;
                 }
+
+                // 根据类对象，获取之前扫描到的，有通过HandlesTypes注解配置当前type的ServeletContainerInitializer集合
                 Set<ServletContainerInitializer> scis =
                         typeInitializerMap.get(type);
+
+                // 如果为空，就新建一个集合，并建立映射关系
                 if (scis == null) {
                     scis = new HashSet<>();
                     typeInitializerMap.put(type, scis);
                 }
+
+                // 将当前的ServletContextInitializer放到集合中
                 scis.add(sci);
             }
         }
@@ -2087,24 +2118,36 @@ public class ContextConfig implements LifecycleListener {
     protected void checkHandlesTypes(JavaClass javaClass,
             Map<String,JavaClassCacheEntry> javaClassCache) {
 
+        // 如果@HandlesTypes配置的类和ServletContainerInitializer的映射为空，说明ServletContainerInitializer上的@HandlesTypes注解配置无效，无需处理
         // Skip this if we can
         if (typeInitializerMap.size() == 0) {
             return;
         }
 
+        // 需要跳过注解处理
         if ((javaClass.getAccessFlags() &
                 org.apache.tomcat.util.bcel.Const.ACC_ANNOTATION) != 0) {
             // Skip annotations.
             return;
         }
 
+        // 获取类名称
         String className = javaClass.getClassName();
+
+        // todo 两段逻辑细节不太理解，但是最终结果是为了建立ServletContainerInitializer类和@HandlesTypes注解标记类的映射关系
 
         Class<?> clazz = null;
         if (handlesTypesNonAnnotations) {
+
+            // 处理类缓存，处理完成后，javaClassCache中会包含javaClass、对应父类以及实现接口的类缓存
             // This *might* be match for a HandlesType.
             populateJavaClassCache(className, javaClass, javaClassCache);
+
+            // 获取缓存Entry
             JavaClassCacheEntry entry = javaClassCache.get(className);
+
+            // 如果关联的ServletContainerInitializer为空，则需要获取有通过@HandlesTypes配置当前javaClass的ServletContainerInitializer集合
+            // 将获取到的ServletContainerInitializer集合关联到org.apache.catalina.startup.ContextConfig.JavaClassCacheEntry.sciSet
             if (entry.getSciSet() == null) {
                 try {
                     populateSCIsForCacheEntry(entry, javaClassCache);
@@ -2115,14 +2158,21 @@ public class ContextConfig implements LifecycleListener {
                             classHierarchyToString(className, entry, javaClassCache)));
                 }
             }
+
+            // 计算完成后，如果当前的ServletContainerInitializer集合不为空，需要进行处理
             if (!entry.getSciSet().isEmpty()) {
+
+                // 根据类路径加载类
                 // Need to try and load the class
                 clazz = Introspection.loadClass(context, className);
+
+                // 加载失败不处理
                 if (clazz == null) {
                     // Can't load the class so no point continuing
                     return;
                 }
 
+                // 循环有配置当前clazz的ServletContainerInitializer集合，反向建立ServletContainerInitializer和clazz的映射
                 for (ServletContainerInitializer sci : entry.getSciSet()) {
                     Set<Class<?>> classes = initializerClassMap.get(sci);
                     if (classes == null) {
@@ -2134,14 +2184,24 @@ public class ContextConfig implements LifecycleListener {
             }
         }
 
+        //
         if (handlesTypesAnnotations) {
+
+            // 获取当前类的注解属性
             AnnotationEntry[] annotationEntries = javaClass.getAnnotationEntries();
             if (annotationEntries != null) {
+
+                // 循环类和ServletContainerInitializer的映射
                 for (Map.Entry<Class<?>, Set<ServletContainerInitializer>> entry :
                         typeInitializerMap.entrySet()) {
+
+                    // 当前类为注解时才处理
                     if (entry.getKey().isAnnotation()) {
+
+                        // 获取类路径
                         String entryClassName = entry.getKey().getName();
                         for (AnnotationEntry annotationEntry : annotationEntries) {
+                            // 这边不太懂
                             if (entryClassName.equals(
                                     getClassName(annotationEntry.getAnnotationType()))) {
                                 if (clazz == null) {
@@ -2196,11 +2256,14 @@ public class ContextConfig implements LifecycleListener {
             return;
         }
 
+        // 添加缓存映射
         // Add this class to the cache
         javaClassCache.put(className, new JavaClassCacheEntry(javaClass));
 
+        // 处理父类缓存
         populateJavaClassCache(javaClass.getSuperclassName(), javaClassCache);
 
+        // 处理接口缓存
         for (String interfaceName : javaClass.getInterfaceNames()) {
             populateJavaClassCache(interfaceName, javaClassCache);
         }
@@ -2208,14 +2271,26 @@ public class ContextConfig implements LifecycleListener {
 
     private void populateJavaClassCache(String className,
             Map<String,JavaClassCacheEntry> javaClassCache) {
+
+        // 没有缓存的时候才需要处理
         if (!javaClassCache.containsKey(className)) {
+
+            // 获取类的全路径
             String name = className.replace('.', '/') + ".class";
+
+            // 读取类文件为流
             try (InputStream is = context.getLoader().getClassLoader().getResourceAsStream(name)) {
                 if (is == null) {
                     return;
                 }
+
+                // 创建类文件流转换器
                 ClassParser parser = new ClassParser(is);
+
+                // 转换出JavaClass
                 JavaClass clazz = parser.parse();
+
+                // 处理类缓存
                 populateJavaClassCache(clazz.getClassName(), clazz, javaClassCache);
             } catch (ClassFormatException e) {
                 log.debug(sm.getString("contextConfig.invalidSciHandlesTypes",
@@ -2229,32 +2304,47 @@ public class ContextConfig implements LifecycleListener {
 
     private void populateSCIsForCacheEntry(JavaClassCacheEntry cacheEntry,
             Map<String,JavaClassCacheEntry> javaClassCache) {
+
+        // 新建ServletContainerInitializer集合
         Set<ServletContainerInitializer> result = new HashSet<>();
 
+        // 获取父类缓存
         // Super class
         String superClassName = cacheEntry.getSuperclassName();
         JavaClassCacheEntry superClassCacheEntry =
                 javaClassCache.get(superClassName);
 
+        // 避免Object的无限循环
         // Avoid an infinite loop with java.lang.Object
         if (cacheEntry.equals(superClassCacheEntry)) {
             cacheEntry.setSciSet(EMPTY_SCI_SET);
             return;
         }
 
+        // 父类不为空，但是父类的ServletContainerInitializer集合为空（最少会是空集合），则需要计算父类的ServletContainerInitializer集合（递归调用）
         // May be null of the class is not present or could not be loaded.
         if (superClassCacheEntry != null) {
             if (superClassCacheEntry.getSciSet() == null) {
                 populateSCIsForCacheEntry(superClassCacheEntry, javaClassCache);
             }
+
+            // 将父类的ServletContainerInitializer集合加入当前类的集合中
             result.addAll(superClassCacheEntry.getSciSet());
         }
+
+        // 此处再执行一次通过父类名称获取ServletContainerInitializer集合，避免superClassCacheEntry为空的情况
+        // 结果集是Set，会自动去重
         result.addAll(getSCIsForClass(superClassName));
 
+        // 处理当前类实现的接口
         // Interfaces
         for (String interfaceName : cacheEntry.getInterfaceNames()) {
+
+            // 获取接口类信息缓存
             JavaClassCacheEntry interfaceEntry =
                     javaClassCache.get(interfaceName);
+
+            // 获取接口上标注的ServletContainerInitializer集合
             // A null could mean that the class not present in application or
             // that there is nothing of interest. Either way, nothing to do here
             // so move along
@@ -2264,9 +2354,12 @@ public class ContextConfig implements LifecycleListener {
                 }
                 result.addAll(interfaceEntry.getSciSet());
             }
+
+            // 通过接口名称获取ServletContainerInitializer集合
             result.addAll(getSCIsForClass(interfaceName));
         }
 
+        // 设置ServletContainerInitializer集合
         cacheEntry.setSciSet(result.isEmpty() ? EMPTY_SCI_SET : result);
     }
 
@@ -2274,7 +2367,11 @@ public class ContextConfig implements LifecycleListener {
         for (Map.Entry<Class<?>, Set<ServletContainerInitializer>> entry :
                 typeInitializerMap.entrySet()) {
             Class<?> clazz = entry.getKey();
+
+            // 如果类是注解类型的，不处理
             if (!clazz.isAnnotation()) {
+
+                // 非注解类型的，返回对应有配置当前clazz的ServletContainerInitializer集合
                 if (clazz.getName().equals(className)) {
                     return entry.getValue();
                 }

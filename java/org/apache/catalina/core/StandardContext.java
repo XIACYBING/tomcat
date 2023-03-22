@@ -4721,29 +4721,49 @@ public class StandardContext extends ContainerBase
         getServletContext();
         context.setNewServletContextListenerAllowed(false);
 
+        // 获取应用生命周期监听器
         Object instances[] = getApplicationLifecycleListeners();
+
+        // 如果为空，直接返回
         if (instances == null || instances.length == 0) {
             return ok;
         }
 
+        // 新建ServletContextEvent事件
         ServletContextEvent event = new ServletContextEvent(getServletContext());
+
+        // 如果noPluggabilityListeners/非插入性监听器集合不为空，并使用NoPluggabilityServletContext创建tld事件
         ServletContextEvent tldEvent = null;
         if (noPluggabilityListeners.size() > 0) {
             noPluggabilityServletContext = new NoPluggabilityServletContext(getServletContext());
             tldEvent = new ServletContextEvent(noPluggabilityServletContext);
         }
+
+        // 循环应用生命周期监听器
         for (int i = 0; i < instances.length; i++) {
-            if (!(instances[i] instanceof ServletContextListener))
+
+            // 非ServletContextListener的不处理
+            if (!(instances[i] instanceof ServletContextListener)) {
                 continue;
+            }
+
+            // 类型转换
             ServletContextListener listener =
                 (ServletContextListener) instances[i];
             try {
+
+                // 发布容器初始化前的事件
                 fireContainerEvent("beforeContextInitialized", listener);
+
+                // 根据监听器类型发布不同的事件
+                // Spring的ContextLoaderListener就是在这里处理的，会初始化Spring容器
                 if (noPluggabilityListeners.contains(listener)) {
                     listener.contextInitialized(tldEvent);
                 } else {
                     listener.contextInitialized(event);
                 }
+
+                // 发布容器初始化后的事件
                 fireContainerEvent("afterContextInitialized", listener);
             } catch (Throwable t) {
                 ExceptionUtils.handleThrowable(t);
@@ -5189,6 +5209,13 @@ public class StandardContext extends ContainerBase
             // Set up the context init params
             mergeParameters();
 
+            // 调用ServletContainerInitializer的onStartUp方法，根据ServletContainerInitializer类上配置的@HandlesTypes
+            // 注解，将需要处理的类的Class，和当前ServletContext作为参数传递进去
+            // Spring的启动中，就是基于SpringServletContainerInitializer去处理WebApplicationInitializer，其中有一个实现类是org.springframework.web.servlet.support.AbstractDispatcherServletInitializer
+            // 该类会创建Spring容器，配置web.xml，并注册相关的过滤器
+
+            // 平时我们看见的Spring MVC项目是通过在web.xml文件中配置org.springframework.web.context
+            // .ContextLoaderListener，在该监听器中创建Spring容器，并完成相关容器和配置
             // Call ServletContainerInitializers
             for (Map.Entry<ServletContainerInitializer, Set<Class<?>>> entry :
                 initializers.entrySet()) {
@@ -5204,6 +5231,7 @@ public class StandardContext extends ContainerBase
 
             // Configure and call application event listeners
             if (ok) {
+                // 配置并调用应用事件监听器，Spring的ContextLoaderListener就是在此处被调用，并初始化Spring容器
                 if (!listenerStart()) {
                     log.error(sm.getString("standardContext.listenerFail"));
                     ok = false;
