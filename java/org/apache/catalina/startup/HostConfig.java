@@ -310,6 +310,7 @@ public class HostConfig implements LifecycleListener {
         }
 
         // Process the event that has occurred
+        // 周期事件需要调用check()方法检查webapps目录下是否有Web应用目录新增或被删除，如果有，则新增或删除对应的Context容器
         if (event.getType().equals(Lifecycle.PERIODIC_EVENT)) {
             check();
         } else if (event.getType().equals(Lifecycle.BEFORE_START_EVENT)) {

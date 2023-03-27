@@ -1005,7 +1005,7 @@ public abstract class ContainerBase extends LifecycleMBeanBase
         // 设置状态为STARTING，并发布相关事件
         setState(LifecycleState.STARTING);
 
-        // 启动容器后台守护线程
+        // 启动容器后台守护线程：不同容器的后台守护线程负责不同的事情，比如Context容器的后台守护线程实现热加载，Host容器的后台守护线程会发布HostConfig变更事件，从而实现热部署
         // Start our thread
         threadStart();
 
@@ -1195,9 +1195,11 @@ public abstract class ContainerBase extends LifecycleMBeanBase
     @Override
     public void backgroundProcess() {
 
+        // 如果容器状态非有效，直接返回不处理：STARTING、STARTED、STOPPING_PREP
         if (!getState().isAvailable())
             return;
 
+        // 集群后台事务处理
         Cluster cluster = getClusterInternal();
         if (cluster != null) {
             try {
@@ -1207,6 +1209,8 @@ public abstract class ContainerBase extends LifecycleMBeanBase
                         cluster), e);
             }
         }
+
+        // Realm后台事务处理
         Realm realm = getRealmInternal();
         if (realm != null) {
             try {
@@ -1215,6 +1219,8 @@ public abstract class ContainerBase extends LifecycleMBeanBase
                 log.warn(sm.getString("containerBase.backgroundProcess.realm", realm), e);
             }
         }
+
+        // Valve后台事务处理
         Valve current = pipeline.getFirst();
         while (current != null) {
             try {
@@ -1224,6 +1230,8 @@ public abstract class ContainerBase extends LifecycleMBeanBase
             }
             current = current.getNext();
         }
+
+        // 发布周期事件给想要感知容器存活状态的监听器：Host容器的热部署就是在对应的监听器HostConfig中实现的
         fireLifecycleEvent(Lifecycle.PERIODIC_EVENT, null);
     }
 
@@ -1358,7 +1366,7 @@ public abstract class ContainerBase extends LifecycleMBeanBase
             return;
         }
 
-        // 启动容器后台处理器线程，设置为守护线程  todo 当前线程主要是在干嘛？
+        // 启动容器后台处理器线程，设置为守护线程：不同容器的后台守护线程负责不同的事情，比如Context容器的后台守护线程实现热加载，Host容器的后台守护线程会发布HostConfig变更事件，从而实现热部署
         threadDone = false;
         String threadName = "ContainerBackgroundProcessor[" + toString() + "]";
         thread = new Thread(new ContainerBackgroundProcessor(), threadName);
@@ -1445,20 +1453,31 @@ public abstract class ContainerBase extends LifecycleMBeanBase
             ClassLoader originalClassLoader = null;
 
             try {
+
+                // Context容器实现热加载：确认Context是否有Class/静态资源变更，如果有，需要重新初始化对应Context
                 if (container instanceof Context) {
+
+                    // WebappLoader，如果为空则当前容器无需处理
                     Loader loader = ((Context) container).getLoader();
                     // Loader will be null for FailedContext instances
                     if (loader == null) {
                         return;
                     }
 
+                    // todo bind是做什么？
                     // Ensure background processing for Contexts and Wrappers
                     // is performed under the web app's class loader
                     originalClassLoader = ((Context) container).bind(false, null);
                 }
+
+                // 调用容器的backgroundProcess，Context容器重写了该方法，从而实现了热加载
                 container.backgroundProcess();
+
+                // 获取当前容器的子容器，循环子容器，递归调用当前方法，以便每层级的容器的后台事务都会被处理到
                 Container[] children = container.findChildren();
                 for (int i = 0; i < children.length; i++) {
+
+                    // 子容器的backgroundProcessorDelay如果大于0，说明子容器有自己的守护线程，不需要父容器调用
                     if (children[i].getBackgroundProcessorDelay() <= 0) {
                         processChildren(children[i]);
                     }

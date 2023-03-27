@@ -284,10 +284,15 @@ public class WebappLoader extends LifecycleMBeanBase
      */
     @Override
     public void backgroundProcess() {
+
+        // reloadable：可通过server.xml文件中的Context标签里面的reloadable属性配置（<Context reloadable="true"/>）
+        // modified()：WEB-INF/classes或WEB-INF/lib目录下有发生变动时返回true
         if (reloadable && modified()) {
             try {
                 Thread.currentThread().setContextClassLoader
                     (WebappLoader.class.getClassLoader());
+
+                // 重新加载当前Context，其中的Session不动
                 if (context != null) {
                     context.reload();
                 }

@@ -3786,10 +3786,13 @@ public class StandardContext extends ContainerBase
             log.info(sm.getString("standardContext.reloadingStarted",
                     getName()));
 
+        // 暂时停止处理请求
         // Stop accepting requests temporarily.
         setPaused(true);
 
         try {
+
+            // 停止容器
             stop();
         } catch (LifecycleException e) {
             log.error(
@@ -3797,12 +3800,15 @@ public class StandardContext extends ContainerBase
         }
 
         try {
+
+            // 重新启动容器
             start();
         } catch (LifecycleException e) {
             log.error(
                 sm.getString("standardContext.startingContext", getName()), e);
         }
 
+        // 解除暂停，继续处理请求
         setPaused(false);
 
         if(log.isInfoEnabled())
@@ -5582,9 +5588,11 @@ public class StandardContext extends ContainerBase
     @Override
     public void backgroundProcess() {
 
+        // 无效状态不处理
         if (!getState().isAvailable())
             return;
 
+        // 获取加载器，实现类是WebappLoader，它的后台事务会检测WEB-INF/classes和WEB-INF/lib目录下的文件变化，以实现Class的热加载
         Loader loader = getLoader();
         if (loader != null) {
             try {
@@ -5594,6 +5602,8 @@ public class StandardContext extends ContainerBase
                         "standardContext.backgroundProcess.loader", loader), e);
             }
         }
+
+        // Session管理器的后台事务会检查是否有过期的Session
         Manager manager = getManager();
         if (manager != null) {
             try {
@@ -5604,6 +5614,8 @@ public class StandardContext extends ContainerBase
                         e);
             }
         }
+
+        // WebResourceRoot的后台事务会检查是否有静态资源发生变化
         WebResourceRoot resources = getResources();
         if (resources != null) {
             try {
@@ -5614,6 +5626,8 @@ public class StandardContext extends ContainerBase
                         resources), e);
             }
         }
+
+        // todo 这个是干啥的？
         InstanceManager instanceManager = getInstanceManager();
         if (instanceManager instanceof DefaultInstanceManager) {
             try {
@@ -5624,6 +5638,8 @@ public class StandardContext extends ContainerBase
                         resources), e);
             }
         }
+
+        // 调用父类的后台事务处理
         super.backgroundProcess();
     }
 
