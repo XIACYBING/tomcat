@@ -413,8 +413,11 @@ public class StandardService extends LifecycleMBeanBase implements Service {
         if(log.isInfoEnabled()) {
             log.info(sm.getString("standardService.start.name", this.name));
         }
+
+        // 发布STARTING事件
         setState(LifecycleState.STARTING);
 
+        // 启动engine
         // Start our defined Container first
         if (engine != null) {
             synchronized (engine) {
@@ -422,14 +425,17 @@ public class StandardService extends LifecycleMBeanBase implements Service {
             }
         }
 
+        // 启动线程池
         synchronized (executors) {
             for (Executor executor: executors) {
                 executor.start();
             }
         }
 
+        // 启动MapperListener
         mapperListener.start();
 
+        // 启动Connector
         // Start our defined Connectors second
         synchronized (connectorsLock) {
             for (Connector connector: connectors) {
@@ -459,6 +465,7 @@ public class StandardService extends LifecycleMBeanBase implements Service {
     @Override
     protected void stopInternal() throws LifecycleException {
 
+        // 先暂停connector，避免再接收外部请求
         // Pause connectors first
         synchronized (connectorsLock) {
             for (Connector connector: connectors) {
@@ -472,10 +479,14 @@ public class StandardService extends LifecycleMBeanBase implements Service {
             }
         }
 
-        if(log.isInfoEnabled())
+        if(log.isInfoEnabled()) {
             log.info(sm.getString("standardService.stop.name", this.name));
+        }
+
+        // 设置STOPPING状态，发布STOPPING事件
         setState(LifecycleState.STOPPING);
 
+        // 关闭engine，不再处理请求
         // Stop our defined Container second
         if (engine != null) {
             synchronized (engine) {
@@ -483,6 +494,7 @@ public class StandardService extends LifecycleMBeanBase implements Service {
             }
         }
 
+        // 关闭connector
         // Now stop the connectors
         synchronized (connectorsLock) {
             for (Connector connector: connectors) {
@@ -503,12 +515,14 @@ public class StandardService extends LifecycleMBeanBase implements Service {
             }
         }
 
+        // 关闭mapperListener：之所以要再判断一次状态，是因为如果是server启动失败导致当前方法被调用的，则mapperListener不应该被调用
         // If the Server failed to start, the mapperListener won't have been
         // started
         if (mapperListener.getState() != LifecycleState.INITIALIZED) {
             mapperListener.stop();
         }
 
+        // 关闭线程池
         synchronized (executors) {
             for (Executor executor: executors) {
                 executor.stop();
@@ -524,12 +538,15 @@ public class StandardService extends LifecycleMBeanBase implements Service {
     @Override
     protected void initInternal() throws LifecycleException {
 
+        // 调用父类初始化
         super.initInternal();
 
+        // 初始化engine容器
         if (engine != null) {
             engine.init();
         }
 
+        // 初始化线程池
         // Initialize any Executors
         for (Executor executor : findExecutors()) {
             if (executor instanceof JmxEnabled) {
@@ -538,9 +555,11 @@ public class StandardService extends LifecycleMBeanBase implements Service {
             executor.init();
         }
 
+        // 初始化mapperListener，用于监听Mapper变动
         // Initialize mapper listener
         mapperListener.init();
 
+        // 初始化Connector，先初始化engine，再初始化connector，保证connector初始化后就能提供服务
         // Initialize our defined Connectors
         synchronized (connectorsLock) {
             for (Connector connector : connectors) {
@@ -562,8 +581,11 @@ public class StandardService extends LifecycleMBeanBase implements Service {
 
     @Override
     protected void destroyInternal() throws LifecycleException {
+
+        // 销毁mapperListener
         mapperListener.destroy();
 
+        // 销毁connector
         // Destroy our defined Connectors
         synchronized (connectorsLock) {
             for (Connector connector : connectors) {
@@ -576,15 +598,18 @@ public class StandardService extends LifecycleMBeanBase implements Service {
             }
         }
 
+        // 销毁线程池
         // Destroy any Executors
         for (Executor executor : findExecutors()) {
             executor.destroy();
         }
 
+        // 销毁engine
         if (engine != null) {
             engine.destroy();
         }
 
+        // 销毁父类相关资源
         super.destroyInternal();
     }
 

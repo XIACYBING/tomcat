@@ -255,8 +255,9 @@ public class StandardEngine extends ContainerBase implements Engine {
     protected synchronized void startInternal() throws LifecycleException {
 
         // Log our server identification information
-        if(log.isInfoEnabled())
+        if(log.isInfoEnabled()) {
             log.info( "Starting Servlet Engine: " + ServerInfo.getServerInfo());
+        }
 
         // Standard container startup
         super.startInternal();

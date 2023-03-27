@@ -149,6 +149,9 @@ import org.apache.tomcat.util.res.StringManager;
  *
  * 5、容器属性的管理：其他的方法大都属于这类
  *
+ * 对于其他的容器来说，容器生命周期管理的基础逻辑都由当前类来实现（{@link #initInternal()}、{@link #startInternal()}、{@link #stopInternal()}、
+ * {@link #destroyInternal()}），如果有自己需要实现的逻辑，就覆盖父类方法，覆盖方法中先调用父类的逻辑，然后执行自身的逻辑
+ *
  * @author Craig R. McClanahan
  */
 public abstract class ContainerBase extends LifecycleMBeanBase
@@ -301,6 +304,10 @@ public abstract class ContainerBase extends LifecycleMBeanBase
      * children associated with this container.
      */
     private int startStopThreads = 1;
+
+    /**
+     * 启动关闭线程池，用来处理子容器的启动/关闭事件
+     */
     protected ThreadPoolExecutor startStopExecutor;
 
 
@@ -380,8 +387,9 @@ public abstract class ContainerBase extends LifecycleMBeanBase
     @Override
     public Log getLogger() {
 
-        if (logger != null)
+        if (logger != null) {
             return (logger);
+        }
         logger = LogFactory.getLog(getLogName());
         return (logger);
 
@@ -919,12 +927,18 @@ public abstract class ContainerBase extends LifecycleMBeanBase
     @Override
     protected void initInternal() throws LifecycleException {
         BlockingQueue<Runnable> startStopQueue = new LinkedBlockingQueue<>();
+
+        // 新建子容器启动关闭线程池
         startStopExecutor = new ThreadPoolExecutor(
                 getStartStopThreadsInternal(),
                 getStartStopThreadsInternal(), 10, TimeUnit.SECONDS,
                 startStopQueue,
                 new StartStopThreadFactory(getName() + "-startStop-"));
+
+        // 允许核心线程超时关闭，避免启动过程中的无用线程资源占用
         startStopExecutor.allowCoreThreadTimeOut(true);
+
+        // 初始化父类相关资源
         super.initInternal();
     }
 
@@ -941,6 +955,8 @@ public abstract class ContainerBase extends LifecycleMBeanBase
 
         // Start our subordinate components, if any
         logger = null;
+
+        // 初始化logger
         getLogger();
         Cluster cluster = getClusterInternal();
         if (cluster instanceof Lifecycle) {
@@ -951,13 +967,18 @@ public abstract class ContainerBase extends LifecycleMBeanBase
             ((Lifecycle) realm).start();
         }
 
+        // 获取子容器
         // Start our child containers, if any
         Container children[] = findChildren();
         List<Future<Void>> results = new ArrayList<>();
+
+        // 循环子容器，给startStopExecutor提交异步任务，加快子容器启动速度
+        // StartChild的run方法中调用Container.start方法，启动容器
         for (int i = 0; i < children.length; i++) {
             results.add(startStopExecutor.submit(new StartChild(children[i])));
         }
 
+        // 等待容器启动完成
         boolean fail = false;
         for (Future<Void> result : results) {
             try {
@@ -968,18 +989,23 @@ public abstract class ContainerBase extends LifecycleMBeanBase
             }
 
         }
+
+        // 任意一子容器启动失败，则抛出异常
         if (fail) {
             throw new LifecycleException(
                     sm.getString("containerBase.threadedStartFailed"));
         }
 
+        // 启动当前容器的pipeline
         // Start the Valves in our pipeline (including the basic), if any
-        if (pipeline instanceof Lifecycle)
+        if (pipeline instanceof Lifecycle) {
             ((Lifecycle) pipeline).start();
+        }
 
-
+        // 设置状态为STARTING，并发布相关事件
         setState(LifecycleState.STARTING);
 
+        // 启动容器后台守护线程
         // Start our thread
         threadStart();
 
@@ -996,17 +1022,21 @@ public abstract class ContainerBase extends LifecycleMBeanBase
     @Override
     protected synchronized void stopInternal() throws LifecycleException {
 
+        // 关闭容器后台守护线程
         // Stop our thread
         threadStop();
 
+        // 设置STOPPING状态，发布相关事件
         setState(LifecycleState.STOPPING);
 
+        // 停止pipeline
         // Stop the Valves in our pipeline (including the basic), if any
         if (pipeline instanceof Lifecycle &&
                 ((Lifecycle) pipeline).getState().isAvailable()) {
             ((Lifecycle) pipeline).stop();
         }
 
+        // 通过线程池异步停止子容器
         // Stop our child containers, if any
         Container children[] = findChildren();
         List<Future<Void>> results = new ArrayList<>();
@@ -1014,6 +1044,7 @@ public abstract class ContainerBase extends LifecycleMBeanBase
             results.add(startStopExecutor.submit(new StopChild(children[i])));
         }
 
+        // 等待子容器stop完成
         boolean fail = false;
         for (Future<Void> result : results) {
             try {
@@ -1023,6 +1054,8 @@ public abstract class ContainerBase extends LifecycleMBeanBase
                 fail = true;
             }
         }
+
+        // 任一子容器stop失败都抛出异常
         if (fail) {
             throw new LifecycleException(
                     sm.getString("containerBase.threadedStopFailed"));
@@ -1051,26 +1084,31 @@ public abstract class ContainerBase extends LifecycleMBeanBase
             ((Lifecycle) cluster).destroy();
         }
 
+        // 销毁pipeline
         // Stop the Valves in our pipeline (including the basic), if any
         if (pipeline instanceof Lifecycle) {
             ((Lifecycle) pipeline).destroy();
         }
 
+        // 销毁子容器
         // Remove children now this container is being destroyed
         for (Container child : findChildren()) {
             removeChild(child);
         }
 
+        // 从父容器中销毁自己
         // Required if the child is destroyed directly.
         if (parent != null) {
             parent.removeChild(this);
         }
 
+        // 销毁startStop线程池
         // If init fails, this may be null
         if (startStopExecutor != null) {
             startStopExecutor.shutdownNow();
         }
 
+        // 销毁父类相关资源
         super.destroyInternal();
     }
 
@@ -1313,11 +1351,14 @@ public abstract class ContainerBase extends LifecycleMBeanBase
      */
     protected void threadStart() {
 
-        if (thread != null)
+        if (thread != null) {
             return;
-        if (backgroundProcessorDelay <= 0)
+        }
+        if (backgroundProcessorDelay <= 0) {
             return;
+        }
 
+        // 启动容器后台处理器线程，设置为守护线程  todo 当前线程主要是在干嘛？
         threadDone = false;
         String threadName = "ContainerBackgroundProcessor[" + toString() + "]";
         thread = new Thread(new ContainerBackgroundProcessor(), threadName);

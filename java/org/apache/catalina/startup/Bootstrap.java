@@ -261,16 +261,22 @@ public final class Bootstrap {
         SecurityClassLoad.securityClassLoad(catalinaLoader);
 
         // Load our startup class and call its process() method
-        if (log.isDebugEnabled())
+        if (log.isDebugEnabled()) {
             log.debug("Loading startup class");
+        }
+
+        // 实例化Catalina
         Class<?> startupClass =
             catalinaLoader.loadClass
             ("org.apache.catalina.startup.Catalina");
         Object startupInstance = startupClass.newInstance();
 
         // Set the shared extensions class loader
-        if (log.isDebugEnabled())
+        if (log.isDebugEnabled()) {
             log.debug("Setting startup class properties");
+        }
+
+        // 调用Catalina的setParentClassLoader方法    todo 为什么要用反射调用？组件化？
         String methodName = "setParentClassLoader";
         Class<?> paramTypes[] = new Class[1];
         paramTypes[0] = Class.forName("java.lang.ClassLoader");
@@ -280,6 +286,7 @@ public final class Bootstrap {
             startupInstance.getClass().getMethod(methodName, paramTypes);
         method.invoke(startupInstance, paramValues);
 
+        // 设置Catalina
         catalinaDaemon = startupInstance;
 
     }
@@ -337,7 +344,10 @@ public final class Bootstrap {
     public void init(String[] arguments)
         throws Exception {
 
+        // 调用初始化方法，执行初始化：主要是初始化ClassLoader和Catalina
         init();
+
+        // 调用Catalina的load方法，根据argument加载相关内容
         load(arguments);
 
     }
@@ -349,8 +359,13 @@ public final class Bootstrap {
      */
     public void start()
         throws Exception {
-        if( catalinaDaemon==null ) init();
 
+        // 如果Catalina为空，先调用init方法，加载Catalina
+        if( catalinaDaemon==null ) {
+            init();
+        }
+
+        // 调用Catalina的start方法   todo 为什么用反射调用？
         Method method = catalinaDaemon.getClass().getMethod("start", (Class [] )null);
         method.invoke(catalinaDaemon, (Object [])null);
 
@@ -364,6 +379,7 @@ public final class Bootstrap {
     public void stop()
         throws Exception {
 
+        // 反射调用Catalina的stop方法
         Method method = catalinaDaemon.getClass().getMethod("stop", (Class [] ) null);
         method.invoke(catalinaDaemon, (Object [] ) null);
 
@@ -462,6 +478,8 @@ public final class Bootstrap {
             // Don't set daemon until init() has completed
             Bootstrap bootstrap = new Bootstrap();
             try {
+
+                // 初始化bootstrap
                 bootstrap.init();
             } catch (Throwable t) {
                 handleThrowable(t);

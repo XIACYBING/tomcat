@@ -279,6 +279,7 @@ public class Catalina {
         digester.setFakeAttributes(fakeAttributes);
         digester.setUseContextClassLoader(true);
 
+        // 解析server节点
         // Configure the actions we will be using
         digester.addObjectCreate("Server",
                                  "org.apache.catalina.core.StandardServer",
@@ -288,6 +289,7 @@ public class Catalina {
                             "setServer",
                             "org.apache.catalina.Server");
 
+        // 解析GlobalNamingResources节点
         digester.addObjectCreate("Server/GlobalNamingResources",
                                  "org.apache.catalina.deploy.NamingResourcesImpl");
         digester.addSetProperties("Server/GlobalNamingResources");
@@ -295,6 +297,7 @@ public class Catalina {
                             "setGlobalNamingResources",
                             "org.apache.catalina.deploy.NamingResourcesImpl");
 
+        // 解析Listener节点
         digester.addObjectCreate("Server/Listener",
                                  null, // MUST be specified in the element
                                  "className");
@@ -303,6 +306,7 @@ public class Catalina {
                             "addLifecycleListener",
                             "org.apache.catalina.LifecycleListener");
 
+        // 解析Service节点
         digester.addObjectCreate("Server/Service",
                                  "org.apache.catalina.core.StandardService",
                                  "className");
@@ -311,6 +315,7 @@ public class Catalina {
                             "addService",
                             "org.apache.catalina.Service");
 
+        // 解析Service下的Listener节点
         digester.addObjectCreate("Server/Service/Listener",
                                  null, // MUST be specified in the element
                                  "className");
@@ -319,7 +324,7 @@ public class Catalina {
                             "addLifecycleListener",
                             "org.apache.catalina.LifecycleListener");
 
-        //Executor
+        // 解析Service下的Executor节点
         digester.addObjectCreate("Server/Service/Executor",
                          "org.apache.catalina.core.StandardThreadExecutor",
                          "className");
@@ -330,6 +335,7 @@ public class Catalina {
                             "org.apache.catalina.Executor");
 
 
+        // 解析Service下的Connector节点
         digester.addRule("Server/Service/Connector",
                          new ConnectorCreateRule());
         digester.addRule("Server/Service/Connector",
@@ -500,6 +506,8 @@ public class Catalina {
 
     /**
      * Start a new server instance.
+     *
+     * 读取server.xml文件，生成Server、Service和Connector等相关组件
      */
     public void load() {
 
@@ -510,6 +518,7 @@ public class Catalina {
         // Before digester - it may be needed
         initNaming();
 
+        // 创建Digest，用来解析server.xml文件，生成Server组件，以及底下的Service、Connector等组件
         // Create and execute our Digester
         Digester digester = createStartDigester();
 
@@ -518,6 +527,8 @@ public class Catalina {
         File file = null;
         try {
             try {
+
+                // 获取conf/server.xml文件，包装成输入流
                 file = configFile();
                 inputStream = new FileInputStream(file);
                 inputSource = new InputSource(file.toURI().toURL().toString());
@@ -526,6 +537,8 @@ public class Catalina {
                     log.debug(sm.getString("catalina.configFail", file), e);
                 }
             }
+
+            // 尝试以getResourceAsStream方式加载server.xml文件输入流
             if (inputStream == null) {
                 try {
                     inputStream = getClass().getClassLoader()
@@ -541,6 +554,7 @@ public class Catalina {
                 }
             }
 
+            // 还是没加载到server.xml，尝试加载server-embed.xml
             // This should be included in catalina.jar
             // Alternative: don't bother with xml, just create it manually.
             if (inputStream == null) {
@@ -559,6 +573,7 @@ public class Catalina {
             }
 
 
+            // 还是加载不到，打印相关日志后直接返回
             if (inputStream == null || inputSource == null) {
                 if  (file == null) {
                     log.warn(sm.getString("catalina.configFail",
@@ -576,6 +591,8 @@ public class Catalina {
             try {
                 inputSource.setByteStream(inputStream);
                 digester.push(this);
+
+                // “消化”server.xml文件流，并生成相关的组件（Server、Service、Connector...）
                 digester.parse(inputSource);
             } catch (SAXParseException spe) {
                 log.warn("Catalina.start using " + getConfigFile() + ": " +
@@ -586,6 +603,8 @@ public class Catalina {
                 return;
             }
         } finally {
+
+            // 关闭server.xml文件流
             if (inputStream != null) {
                 try {
                     inputStream.close();
@@ -595,15 +614,23 @@ public class Catalina {
             }
         }
 
+        // Server关联Catalina
         getServer().setCatalina(this);
+
+        // 设置catalina-home目录
         getServer().setCatalinaHome(Bootstrap.getCatalinaHomeFile());
+
+        // 设置catalina-base目录
         getServer().setCatalinaBase(Bootstrap.getCatalinaBaseFile());
 
+        // 初始化日志输出流，使用自定义的输出流包装，方便转发日志流数据
         // Stream redirection
         initStreams();
 
         // Start the new server
         try {
+
+            // 初始化Server
             getServer().init();
         } catch (LifecycleException e) {
             if (Boolean.getBoolean("org.apache.catalina.startup.EXIT_ON_INIT_FAILURE")) {
@@ -640,10 +667,12 @@ public class Catalina {
      */
     public void start() {
 
+        // Server为空，先调用load方法读取server.xml，生成Server
         if (getServer() == null) {
             load();
         }
 
+        // load后还是为空，打印报错日志后直接返回
         if (getServer() == null) {
             log.fatal("Cannot start server. Server instance is not configured.");
             return;
@@ -653,10 +682,14 @@ public class Catalina {
 
         // Start the new server
         try {
+
+            // 调用Server的start方法
             getServer().start();
         } catch (LifecycleException e) {
             log.fatal(sm.getString("catalina.serverStartFail"), e);
             try {
+
+                // 启动失败，调用destroy方法销毁相关资源
                 getServer().destroy();
             } catch (LifecycleException e1) {
                 log.debug("destroy() failed for failed Server ", e1);
@@ -669,6 +702,7 @@ public class Catalina {
             log.info("Server startup in " + ((t2 - t1) / 1000000) + " ms");
         }
 
+        // 注册shutdownHook，监听JVM关闭信息
         // Register shutdown hook
         if (useShutdownHook) {
             if (shutdownHook == null) {
@@ -676,6 +710,7 @@ public class Catalina {
             }
             Runtime.getRuntime().addShutdownHook(shutdownHook);
 
+            // 初始化JULI，关闭时会在shutdownHook中销毁
             // If JULI is being used, disable JULI's shutdown hook since
             // shutdown hooks run in parallel and log messages may be lost
             // if JULI's hook completes before the CatalinaShutdownHook()
@@ -687,7 +722,11 @@ public class Catalina {
         }
 
         if (await) {
+
+            // 调用Server.await方法，监听Tomcat进程外部的shutdown命令
             await();
+
+            // 监听到了命令，调用stop销毁相关资源
             stop();
         }
     }
@@ -699,6 +738,9 @@ public class Catalina {
     public void stop() {
 
         try {
+
+            // 先从JVM中移除shutdownHook，避免因为server.stop导致被调用两次
+            // todo 在org.apache.catalina.core.StandardServer.stopInternal中没有找到使用shutdownHook的地方
             // Remove the ShutdownHook first so that server.stop()
             // doesn't get invoked twice
             if (useShutdownHook) {
@@ -722,10 +764,14 @@ public class Catalina {
         try {
             Server s = getServer();
             LifecycleState state = s.getState();
+
+            // 判断Server的状态：[STOPPING_PREP, DESTROYED]，这个范围内的状态，说明stop已经被调用过了，啥都不用做
             if (LifecycleState.STOPPING_PREP.compareTo(state) <= 0
                     && LifecycleState.DESTROYED.compareTo(state) >= 0) {
                 // Nothing to do. stop() was already called
             } else {
+
+                // 否则需要调用server的stop方法
                 s.stop();
                 s.destroy();
             }
@@ -826,6 +872,8 @@ public class Catalina {
         @Override
         public void run() {
             try {
+
+                // 如果JVM关闭，且Server不为空（说明有启动的Server），调用Catalina.stop方法，停止并销毁相关资源
                 if (getServer() != null) {
                     Catalina.this.stop();
                 }
@@ -833,6 +881,8 @@ public class Catalina {
                 ExceptionUtils.handleThrowable(ex);
                 log.error(sm.getString("catalina.shutdownHookFail"), ex);
             } finally {
+
+                // 关闭JULI   todo 这啥？
                 // If JULI is used, shut JULI down *after* the server shuts down
                 // so log messages aren't lost
                 LogManager logManager = LogManager.getLogManager();

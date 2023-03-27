@@ -385,10 +385,19 @@ public final class StandardServer extends LifecycleMBeanBase implements Server {
 
     }
 
+    /**
+     * 设置stopAwait标识，关闭awaitSocket，中断awaitThread
+     */
     public void stopAwait() {
+
+        // 设置stopAwait为true
         stopAwait=true;
+
+        // 获取等待线程
         Thread t = awaitThread;
         if (t != null) {
+
+            // 等待命令的socket不为空，则关闭对应socket
             ServerSocket s = awaitSocket;
             if (s != null) {
                 awaitSocket = null;
@@ -398,8 +407,12 @@ public final class StandardServer extends LifecycleMBeanBase implements Server {
                     // Ignored
                 }
             }
+
+            // 中断线程
             t.interrupt();
             try {
+
+                // todo 等待线程死亡？
                 t.join(1000);
             } catch (InterruptedException e) {
                 // Ignored
@@ -782,11 +795,15 @@ public final class StandardServer extends LifecycleMBeanBase implements Server {
     @Override
     protected void startInternal() throws LifecycleException {
 
+        // 发布CONFIGURE_START_EVENT事件
         fireLifecycleEvent(CONFIGURE_START_EVENT, null);
+
+        // 设置生命周期状态为STARTING，并发布相关状态
         setState(LifecycleState.STARTING);
 
         globalNamingResources.start();
 
+        // 循环初始化Service
         // Start our defined Services
         synchronized (servicesLock) {
             for (int i = 0; i < services.length; i++) {
@@ -806,9 +823,13 @@ public final class StandardServer extends LifecycleMBeanBase implements Server {
     @Override
     protected void stopInternal() throws LifecycleException {
 
+        // 设置生命周期状态为STOPPING，并发布相关事件
         setState(LifecycleState.STOPPING);
+
+        // 发布CONFIGURE_STOP_EVENT事件
         fireLifecycleEvent(CONFIGURE_STOP_EVENT, null);
 
+        // 循环停止Service
         // Stop our defined Services
         for (int i = 0; i < services.length; i++) {
             services[i].stop();
@@ -816,6 +837,7 @@ public final class StandardServer extends LifecycleMBeanBase implements Server {
 
         globalNamingResources.stop();
 
+        // 停止等待：等待外部命令
         stopAwait();
     }
 
@@ -826,6 +848,7 @@ public final class StandardServer extends LifecycleMBeanBase implements Server {
     @Override
     protected void initInternal() throws LifecycleException {
 
+        // 调用父类的initInternal，初始化必要的内容
         super.initInternal();
 
         // Register global String cache
@@ -870,6 +893,8 @@ public final class StandardServer extends LifecycleMBeanBase implements Server {
                 cl = cl.getParent();
             }
         }
+
+        // 循环初始化server.xml文件中定义的Service
         // Initialize our defined Services
         for (int i = 0; i < services.length; i++) {
             services[i].init();
@@ -878,6 +903,10 @@ public final class StandardServer extends LifecycleMBeanBase implements Server {
 
     @Override
     protected void destroyInternal() throws LifecycleException {
+
+        // destroyInternal和initInternal中的逻辑顺序正好相反
+
+        // 循环销毁server.xml文件中定义的Service
         // Destroy our defined Services
         for (int i = 0; i < services.length; i++) {
             services[i].destroy();
@@ -889,6 +918,7 @@ public final class StandardServer extends LifecycleMBeanBase implements Server {
 
         unregister(onameStringCache);
 
+        // 销毁父类的相关资源
         super.destroyInternal();
     }
 
