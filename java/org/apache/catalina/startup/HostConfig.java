@@ -311,6 +311,7 @@ public class HostConfig implements LifecycleListener {
 
         // Process the event that has occurred
         // 周期事件需要调用check()方法检查webapps目录下是否有Web应用目录新增或被删除，如果有，则新增或删除对应的Context容器
+        // 准确来说，是检查appBase目录下是否有资源变更，并根据情况进行资源的部署和删除
         if (event.getType().equals(Lifecycle.PERIODIC_EVENT)) {
             check();
         } else if (event.getType().equals(Lifecycle.BEFORE_START_EVENT)) {
@@ -436,10 +437,16 @@ public class HostConfig implements LifecycleListener {
         File appBase = host.getAppBaseFile();
         File configBase = host.getConfigBaseFile();
         String[] filteredAppPaths = filterAppPaths(appBase.list());
+
+        // 部署配置文件
         // Deploy XML descriptors from configBase
         deployDescriptors(configBase, configBase.list());
+
+        // 部署war包
         // Deploy WARs
         deployWARs(appBase, filteredAppPaths);
+
+        // 部署已经解压的文件目录
         // Deploy expanded folders
         deployDirectories(appBase, filteredAppPaths);
 
@@ -537,6 +544,7 @@ public class HostConfig implements LifecycleListener {
                 if (isServiced(cn.getName()) || deploymentExists(cn.getName()))
                     continue;
 
+                // 否则添加部署任务：实际上是调用HostConfig.deployDescriptor进行部署
                 results.add(
                         es.submit(new DeployDescriptor(this, cn, contextXml)));
             }
@@ -734,9 +742,12 @@ public class HostConfig implements LifecycleListener {
 
                 ContextName cn = new ContextName(files[i], true);
 
+                // 资源已经在提供服务了，无需处理
                 if (isServiced(cn.getName())) {
                     continue;
                 }
+
+                // 如果当前资源已经被部署了，那么就无需处理
                 if (deploymentExists(cn.getName())) {
                     DeployedApplication app = deployed.get(cn.getName());
                     boolean unpackWAR = unpackWARs;
@@ -770,6 +781,7 @@ public class HostConfig implements LifecycleListener {
                     continue;
                 }
 
+                // 否则添加部署任务：实际上是调用HostConfig.deployWAR进行部署
                 results.add(es.submit(new DeployWar(this, cn, war)));
             }
         }
@@ -1050,9 +1062,11 @@ public class HostConfig implements LifecycleListener {
             if (dir.isDirectory()) {
                 ContextName cn = new ContextName(files[i], false);
 
+                // 已经在提供服务了，或已经部署了，无需处理
                 if (isServiced(cn.getName()) || deploymentExists(cn.getName()))
                     continue;
 
+                // 否则添加部署任务：实际上是调用HostConfig.deployDirectory方法进行部署
                 results.add(es.submit(new DeployDirectory(this, cn, dir)));
             }
         }
@@ -1282,6 +1296,8 @@ public class HostConfig implements LifecycleListener {
      */
     protected synchronized void checkResources(DeployedApplication app,
             boolean skipFileModificationResolutionCheck) {
+
+        // 对应用的重部署资源进行检查，如果有资源发生变更，那么需要将应用进行重部署，如果有资源被移除，那么就需要解除应用的部署
         String[] resources =
             app.redeployResources.keySet().toArray(new String[0]);
         // Offset the current time by the resolution of File.lastModified()
@@ -1289,9 +1305,10 @@ public class HostConfig implements LifecycleListener {
                 System.currentTimeMillis() - FILE_MODIFICATION_RESOLUTION_MS;
         for (int i = 0; i < resources.length; i++) {
             File resource = new File(resources[i]);
-            if (log.isDebugEnabled())
+            if (log.isDebugEnabled()) {
                 log.debug("Checking context[" + app.name +
                         "] redeploy resource " + resource);
+            }
             long lastModified =
                     app.redeployResources.get(resources[i]).longValue();
             if (resource.exists() || lastModified == 0) {
@@ -1302,11 +1319,18 @@ public class HostConfig implements LifecycleListener {
                 if (resource.lastModified() != lastModified && (!host.getAutoDeploy() ||
                         resource.lastModified() < currentTimeWithResolutionOffset ||
                         skipFileModificationResolutionCheck)) {
+
+                    // 资源目录发生了变更
                     if (resource.isDirectory()) {
+
+                        // 目录修改无需采取任何操作，只需要更新最后修改时间
                         // No action required for modified directory
                         app.redeployResources.put(resources[i],
                                 Long.valueOf(resource.lastModified()));
-                    } else if (app.hasDescriptor &&
+                    }
+
+                    // war包发生了变更
+                    else if (app.hasDescriptor &&
                             resource.getName().toLowerCase(
                                     Locale.ENGLISH).endsWith(".war")) {
                         // Modified WAR triggers a reload if there is an XML
@@ -1315,6 +1339,8 @@ public class HostConfig implements LifecycleListener {
                         // expanded WAR (if any)
                         Context context = (Context) host.findChild(app.name);
                         String docBase = context.getDocBase();
+
+                        // 如果目前Context关联的docBase不是war包，则应该是解压后的文件夹，此时需要进行替换
                         if (!docBase.toLowerCase(Locale.ENGLISH).endsWith(".war")) {
                             // This is an expanded directory
                             File docBaseFile = new File(docBase);
@@ -1322,14 +1348,22 @@ public class HostConfig implements LifecycleListener {
                                 docBaseFile = new File(host.getAppBaseFile(),
                                         docBase);
                             }
+
+                            // 重载应用，并替换Context的docBase
                             reload(app, docBaseFile, resource.getAbsolutePath());
                         } else {
+
+                            // 仅重载应用
                             reload(app, null, null);
                         }
+
+                        // 更新重部署资源的最后修改时间
                         // Update times
                         app.redeployResources.put(resources[i],
                                 Long.valueOf(resource.lastModified()));
                         app.timestamp = System.currentTimeMillis();
+
+                        // 必要时将Context的docBase对应的资源加入Context的观察集合中
                         boolean unpackWAR = unpackWARs;
                         if (unpackWAR && context instanceof StandardContext) {
                             unpackWAR = ((StandardContext) context).getUnpackWAR();
@@ -1340,7 +1374,11 @@ public class HostConfig implements LifecycleListener {
                             addWatchedResources(app, null, context);
                         }
                         return;
-                    } else {
+                    }
+
+                    // 如果都不是，这里就先解除应用的部署，并删除可能存在的重部署资源
+                    // 后面会对修改后的应用进行部署
+                    else {
                         // Everything else triggers a redeploy
                         // (just need to undeploy here, deploy will follow)
                         undeploy(app);
@@ -1349,6 +1387,8 @@ public class HostConfig implements LifecycleListener {
                     }
                 }
             } else {
+
+                // 休眠一会，避免因为应用的短暂消失导致的错误操作
                 // There is a chance the the resource was only missing
                 // temporarily eg renamed during a text editor save
                 try {
@@ -1356,16 +1396,22 @@ public class HostConfig implements LifecycleListener {
                 } catch (InterruptedException e1) {
                     // Ignore
                 }
+
+                // 如果资源还在，则无需采取任何操作
                 // Recheck the resource to see if it was really deleted
                 if (resource.exists()) {
                     continue;
                 }
+
+                // 如果资源不在了，就需要解除应用部署，并删除可能存在的重部署资源
                 // Undeploy application
                 undeploy(app);
                 deleteRedeployResources(app, resources, i, true);
                 return;
             }
         }
+
+        // 对应用的需重载资源进行检查，如果有资源发生了变更，那么就需要重载应用
         resources = app.reloadResources.keySet().toArray(new String[0]);
         boolean update = false;
         for (int i = 0; i < resources.length; i++) {
@@ -1398,15 +1444,19 @@ public class HostConfig implements LifecycleListener {
     }
 
 
-    /*
+    /**
      * Note: If either of fileToRemove and newDocBase are null, both will be
      *       ignored.
+     * <p>
+     * 重加载，还有效的{@link Context}通过{@link Context#reload()}进行重加载，无效的{@link Context}则直接通过{@link Context#start()}进行启动
      */
     private void reload(DeployedApplication app, File fileToRemove, String newDocBase) {
         if(log.isInfoEnabled())
             log.info(sm.getString("hostConfig.reload", app.name));
         Context context = (Context) host.findChild(app.name);
         if (context.getState().isAvailable()) {
+
+            // 需要删除原目录，并将newDocBase关联到Context上
             if (fileToRemove != null && newDocBase != null) {
                 context.addLifecycleListener(
                         new ExpandedDirectoryRemovalListener(fileToRemove, newDocBase));
@@ -1429,22 +1479,30 @@ public class HostConfig implements LifecycleListener {
         }
     }
 
-
+    /**
+     * 无效的应用直接解除部署
+     */
     private void undeploy(DeployedApplication app) {
         if (log.isInfoEnabled())
             log.info(sm.getString("hostConfig.undeploy", app.name));
         Container context = host.findChild(app.name);
         try {
+
+            // 从host中移除当前context
             host.removeChild(context);
         } catch (Throwable t) {
             ExceptionUtils.handleThrowable(t);
             log.warn(sm.getString
                      ("hostConfig.context.remove", app.name), t);
         }
+
+        // 已部署的名单中也移除当前应用
         deployed.remove(app.name);
     }
 
-
+    /**
+     * 删除重部署的资源，一般和{@link #undeploy(DeployedApplication)}一起调用
+     */
     private void deleteRedeployResources(DeployedApplication app, String[] resources, int i,
             boolean deleteReloadResources) {
 
@@ -1612,23 +1670,32 @@ public class HostConfig implements LifecycleListener {
 
     /**
      * Check status of all webapps.
+     * 校验webapp下的所有应用，如果有新增的，则启动相关的{@link Context}，如果有被删除的，则移除相关的{@link Context}
      */
     protected void check() {
 
+        // 如果host当前配置着autoDeploy
         if (host.getAutoDeploy()) {
+
+            // 获取当前已部署的web应用并循环
             // Check for resources modification to trigger redeployment
             DeployedApplication[] apps =
                 deployed.values().toArray(new DeployedApplication[0]);
             for (int i = 0; i < apps.length; i++) {
-                if (!isServiced(apps[i].name))
+
+                // 如果当前应用没有在提供服务，那么就可以检查应用，采取可能需要的reload/undeploy操作
+                if (!isServiced(apps[i].name)) {
                     checkResources(apps[i], false);
+                }
             }
 
+            // 判断当前是否有应用的旧版本可以被undeploy
             // Check for old versions of applications that can now be undeployed
             if (host.getUndeployOldVersions()) {
                 checkUndeploy();
             }
 
+            // 检查appBase下是否有没有被部署的资源（descriptor、war、folder），如果有，则部署
             // Hotdeploy applications
             deployApps();
         }
@@ -1798,6 +1865,12 @@ public class HostConfig implements LifecycleListener {
          * removed, the application will be undeployed. Typically, this will
          * contain resources like the context.xml file, a compressed WAR path.
          * The value is the last modification time.
+         * <p>
+         * 需要进行重部署的资源映射，key是资源路径，value是资源信息
+         * <p>
+         * 有任意资源出现修改都需要重部署，有任意资源被移除都需要解除部署
+         * <p>
+         * 比如context.xml文件，压缩的war包路径，解压的文件夹路径，都是资源之一
          */
         public final LinkedHashMap<String, Long> redeployResources =
                 new LinkedHashMap<>();
@@ -1808,6 +1881,10 @@ public class HostConfig implements LifecycleListener {
          * such as the web.xml of a webapp, but can be configured to contain
          * additional descriptors.
          * The value is the last modification time.
+         * <p>
+         * 需要进行重载的资源映射，key是资源路径，value是资源信息
+         * <p>
+         * 有任意资源出现修改都需要重载应用
          */
         public final HashMap<String, Long> reloadResources = new HashMap<>();
 
