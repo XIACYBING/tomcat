@@ -5072,11 +5072,16 @@ public class StandardContext extends ContainerBase
             log.debug("Processing standard container startup");
 
 
+        // 绑定当前Context对应的WebappClassLoader到线程上，方便当前线程启动时加载Web应用内的内容
+        // 在启动的相关流程结束后，还需要将oldCCL绑定回线程，因为启动Context一般是一个单独的线程，不能将WebappClassLoader留在线程上污染线程
+        // WebappClassLoader是从Loader上获取的，Loader如果启动过，此处会有ClassLoader的切换，如果第一次启动，此处不会进行任何切换
         // Binding thread
         ClassLoader oldCCL = bindThread();
 
         try {
             if (ok) {
+
+                // 启动Loader，此处会创建WebappClassLoader
                 // Start our subordinate components, if any
                 Loader loader = getLoader();
                 if (loader instanceof Lifecycle) {
@@ -5096,7 +5101,11 @@ public class StandardContext extends ContainerBase
 
                 // By calling unbindThread and bindThread in a row, we setup the
                 // current Thread CCL to be the webapp classloader
+
+                // 放弃之前绑定到线程上的ClassLoader（可能是Context上次启动的WebappClassLoader）
                 unbindThread(oldCCL);
+
+                // 重新绑定当前Context对应的Loader上的ClassLoader（WebappClassLoader）
                 oldCCL = bindThread();
 
                 // Initialize logger again. Other components might have used it
@@ -5104,6 +5113,7 @@ public class StandardContext extends ContainerBase
                 logger = null;
                 getLogger();
 
+                // 启动安全验证Realm域
                 Realm realm = getRealmInternal();
                 if(null != realm) {
                     if (realm instanceof Lifecycle) {
@@ -5127,9 +5137,11 @@ public class StandardContext extends ContainerBase
                     context.setAttribute(Globals.CREDENTIAL_HANDLER, safeHandler);
                 }
 
+                // 发布生命周期时间：CONFIGURE_START_EVENT
                 // Notify our interested LifecycleListeners
                 fireLifecycleEvent(Lifecycle.CONFIGURE_START_EVENT, null);
 
+                // 启动当前非有效的子容器
                 // Start our child containers, if not already started
                 for (Container child : findChildren()) {
                     if (!child.getState().isAvailable()) {
@@ -5137,12 +5149,14 @@ public class StandardContext extends ContainerBase
                     }
                 }
 
+                // pipeline启动：主要是调用每个Valve的start方法
                 // Start the Valves in our pipeline (including the basic),
                 // if any
                 if (pipeline instanceof Lifecycle) {
                     ((Lifecycle) pipeline).start();
                 }
 
+                // Manager启动
                 // Acquire clustered manager
                 Manager contextManager = null;
                 Manager manager = getManager();
@@ -5186,10 +5200,12 @@ public class StandardContext extends ContainerBase
             }
 
             // We put the resources into the servlet context
-            if (ok)
+            if (ok) {
                 getServletContext().setAttribute
                     (Globals.RESOURCES_ATTR, getResources());
+            }
 
+            // InstanceManager初始化：Servlet就是通过该管理器实例化
             if (ok ) {
                 if (getInstanceManager() == null) {
                     javax.naming.Context context = null;
@@ -5212,6 +5228,7 @@ public class StandardContext extends ContainerBase
                         JarScanner.class.getName(), getJarScanner());
             }
 
+            // 初始化web.xml文件中的contextInitParam参数到ServletContext中
             // Set up the context init params
             mergeParameters();
 
@@ -5252,6 +5269,8 @@ public class StandardContext extends ContainerBase
             }
 
             try {
+
+                // 启动Manager
                 // Start manager
                 Manager manager = getManager();
                 if (manager instanceof Lifecycle) {
@@ -5270,6 +5289,7 @@ public class StandardContext extends ContainerBase
                 }
             }
 
+            // 加载所有需要在启动时加载的Servlet
             // Load and initialize all "load on startup" servlets
             if (ok) {
                 if (!loadOnStartup(findChildren())){
@@ -5281,6 +5301,8 @@ public class StandardContext extends ContainerBase
             // Start ContainerBackgroundProcessor thread
             super.threadStart();
         } finally {
+
+            // 将原来的ContextClassLoader绑定回线程
             // Unbinding thread
             unbindThread(oldCCL);
         }
@@ -5309,6 +5331,7 @@ public class StandardContext extends ContainerBase
         // a clean-up now.
         getResources().gc();
 
+        // 设置生命周期状态，并发布相关事件
         // Reinitializing if something went wrong
         if (!ok) {
             setState(LifecycleState.FAILED);
@@ -5835,11 +5858,14 @@ public class StandardContext extends ContainerBase
     @Override
     public ClassLoader bind(boolean usePrivilegedAction, ClassLoader originalClassLoader) {
         Loader loader = getLoader();
+
+        // 获取当前Context对应的WebAppClassLoader
         ClassLoader webApplicationClassLoader = null;
         if (loader != null) {
             webApplicationClassLoader = loader.getClassLoader();
         }
 
+        // 获取当前线程绑定的ContextClassLoader
         if (originalClassLoader == null) {
             if (usePrivilegedAction) {
                 PrivilegedAction<ClassLoader> pa = new PrivilegedGetTccl();
@@ -5849,6 +5875,7 @@ public class StandardContext extends ContainerBase
             }
         }
 
+        // 如果当前Context没有对应的WebAppClassLoader，或当前线程上绑定的就是当前Context的WebAppClassLoader，则无需切换
         if (webApplicationClassLoader == null ||
                 webApplicationClassLoader == originalClassLoader) {
             // Not possible or not necessary to switch class loaders. Return
@@ -5856,14 +5883,18 @@ public class StandardContext extends ContainerBase
             return null;
         }
 
+        // 获取线程绑定监听器
         ThreadBindingListener threadBindingListener = getThreadBindingListener();
 
+        // 将当前Context对应的WebAppClassLoader绑定到线程上
         if (usePrivilegedAction) {
             PrivilegedAction<Void> pa = new PrivilegedSetTccl(webApplicationClassLoader);
             AccessController.doPrivileged(pa);
         } else {
             Thread.currentThread().setContextClassLoader(webApplicationClassLoader);
         }
+
+        // 调用监听器进行通知（但是目前好像都没有具体的实现）
         if (threadBindingListener != null) {
             try {
                 threadBindingListener.bind();
@@ -5884,6 +5915,7 @@ public class StandardContext extends ContainerBase
             return;
         }
 
+        // 调用监听器进行通知（但是目前似乎都没有具体的实现）
         if (threadBindingListener != null) {
             try {
                 threadBindingListener.unbind();
@@ -5894,6 +5926,7 @@ public class StandardContext extends ContainerBase
             }
         }
 
+        // 将原来的ContextClassLoader绑定回线程
         if (usePrivilegedAction) {
             PrivilegedAction<Void> pa = new PrivilegedSetTccl(originalClassLoader);
             AccessController.doPrivileged(pa);

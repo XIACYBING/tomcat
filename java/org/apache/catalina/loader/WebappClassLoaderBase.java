@@ -276,6 +276,8 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
      * delegate to the parent only if the class or resource is not
      * found locally. Note that the default, <code>false</code>, is
      * the behavior called for by the servlet specification.
+     *
+     * 是否先委托父类加载器加载
      */
     protected boolean delegate = false;
 
@@ -775,22 +777,27 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
     @Override
     public Class<?> findClass(String name) throws ClassNotFoundException {
 
-        if (log.isDebugEnabled())
+        if (log.isDebugEnabled()) {
             log.debug("    findClass(" + name + ")");
+        }
 
+        // 校验ClassLoader状态
         checkStateForClassLoading(name);
 
+        // 权限校验
         // (1) Permission to define this class when using a SecurityManager
         if (securityManager != null) {
             int i = name.lastIndexOf('.');
             if (i >= 0) {
                 try {
-                    if (log.isTraceEnabled())
+                    if (log.isTraceEnabled()) {
                         log.trace("      securityManager.checkPackageDefinition");
+                    }
                     securityManager.checkPackageDefinition(name.substring(0,i));
                 } catch (Exception se) {
-                    if (log.isTraceEnabled())
+                    if (log.isTraceEnabled()) {
                         log.trace("      -->Exception-->ClassNotFoundException", se);
+                    }
                     throw new ClassNotFoundException(name, se);
                 }
             }
@@ -800,9 +807,12 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
         // (throws ClassNotFoundException if it is not found)
         Class<?> clazz = null;
         try {
-            if (log.isTraceEnabled())
+            if (log.isTraceEnabled()) {
                 log.trace("      findClassInternal(" + name + ")");
+            }
             try {
+
+                // 从对应Web应用目录下查找对应的类
                 if (securityManager != null) {
                     PrivilegedAction<Class<?>> dp =
                         new PrivilegedFindClassByName(name);
@@ -815,10 +825,13 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
                         + ") security exception: " + ace.getMessage(), ace);
                 throw new ClassNotFoundException(name, ace);
             } catch (RuntimeException e) {
-                if (log.isTraceEnabled())
+                if (log.isTraceEnabled()) {
                     log.trace("      -->RuntimeException Rethrown", e);
+                }
                 throw e;
             }
+
+            // 如果不在web应用中，就交给父类加载器加载（AppClassLoader）
             if ((clazz == null) && hasExternalRepositories) {
                 try {
                     clazz = super.findClass(name);
@@ -827,25 +840,31 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
                             + ") security exception: " + ace.getMessage(), ace);
                     throw new ClassNotFoundException(name, ace);
                 } catch (RuntimeException e) {
-                    if (log.isTraceEnabled())
+                    if (log.isTraceEnabled()) {
                         log.trace("      -->RuntimeException Rethrown", e);
+                    }
                     throw e;
                 }
             }
+
+            // 如果父类加载器也没找到，则抛出异常
             if (clazz == null) {
-                if (log.isDebugEnabled())
+                if (log.isDebugEnabled()) {
                     log.debug("    --> Returning ClassNotFoundException");
+                }
                 throw new ClassNotFoundException(name);
             }
         } catch (ClassNotFoundException e) {
-            if (log.isTraceEnabled())
+            if (log.isTraceEnabled()) {
                 log.trace("    --> Passing on ClassNotFoundException");
+            }
             throw e;
         }
 
         // Return the class we have located
-        if (log.isTraceEnabled())
+        if (log.isTraceEnabled()) {
             log.debug("      Returning class " + clazz);
+        }
 
         if (log.isTraceEnabled()) {
             ClassLoader cl;
@@ -1145,43 +1164,61 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
      * @param resolve If <code>true</code> then resolve the class
      *
      * @exception ClassNotFoundException if the class was not found
+     *
+     * 本地类缓存 -> ExtClassLoader类缓存 -> ExtClassLoader类加载 ->  AppClassLoader加载(delegated) -> 本地类加载 -> AppClassLoader加载
      */
     @Override
     public Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
 
         synchronized (getClassLoadingLock(name)) {
-            if (log.isDebugEnabled())
+            if (log.isDebugEnabled()) {
                 log.debug("loadClass(" + name + ", " + resolve + ")");
+            }
             Class<?> clazz = null;
 
+            // 校验当前类加载器的生命周期状态
             // Log access to stopped class loader
             checkStateForClassLoading(name);
 
+            // 从当前类加载器的已加载类缓存中获取类对象
             // (0) Check our previously loaded local class cache
             clazz = findLoadedClass0(name);
+
+            // 如果clazz不为空，说明对应类已经加载过
             if (clazz != null) {
-                if (log.isDebugEnabled())
+
+                if (log.isDebugEnabled()) {
                     log.debug("  Returning class from cache");
-                if (resolve)
+                }
+
+                if (resolve) {
                     resolveClass(clazz);
+                }
                 return (clazz);
             }
 
+            // 从ExtClassLoader已加载类的缓存中获取类对象
             // (0.1) Check our previously loaded class cache
             clazz = findLoadedClass(name);
             if (clazz != null) {
-                if (log.isDebugEnabled())
+                if (log.isDebugEnabled()) {
                     log.debug("  Returning class from cache");
-                if (resolve)
+                }
+                if (resolve) {
                     resolveClass(clazz);
+                }
                 return (clazz);
             }
 
             // (0.2) Try loading the class with the system class loader, to prevent
             //       the webapp from overriding Java SE classes. This implements
             //       SRV.10.7.2
+
+            // 修改类全路径为类文件路径
             String resourceName = binaryNameToPath(name, false);
 
+            // 获取JavaSE的类加载器（ExtClassLoader）
+            // 先用ExtClassLoader，是为了防止Web应用使用自己定义的类覆盖JRE的核心类，这是不允许的
             ClassLoader javaseLoader = getJavaseClassLoader();
             boolean tryLoadingFromJavaseLoader;
             try {
@@ -1191,6 +1228,8 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
                 // https://bz.apache.org/bugzilla/show_bug.cgi?id=58125 for
                 // details) when running under a security manager in rare cases
                 // this call may trigger a ClassCircularityError.
+
+                // 先通过ExtClassLoader判断类文件是否存在
                 tryLoadingFromJavaseLoader = (javaseLoader.getResource(resourceName) != null);
             } catch (ClassCircularityError cce) {
                 // The getResource() trick won't work for this class. We have to
@@ -1199,12 +1238,14 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
                 tryLoadingFromJavaseLoader = true;
             }
 
+            // 类文件存在，则通过ExtClassLoader加载类
             if (tryLoadingFromJavaseLoader) {
                 try {
                     clazz = javaseLoader.loadClass(name);
                     if (clazz != null) {
-                        if (resolve)
+                        if (resolve) {
                             resolveClass(clazz);
+                        }
                         return (clazz);
                     }
                 } catch (ClassNotFoundException e) {
@@ -1212,6 +1253,7 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
                 }
             }
 
+            // 安全校验
             // (0.5) Permission to access this class when using a SecurityManager
             if (securityManager != null) {
                 int i = name.lastIndexOf('.');
@@ -1229,17 +1271,21 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
 
             boolean delegateLoad = delegate || filter(name, true);
 
+            // parent好像是共享类加载器？
             // (1) Delegate to our parent if requested
             if (delegateLoad) {
-                if (log.isDebugEnabled())
+                if (log.isDebugEnabled()) {
                     log.debug("  Delegating to parent classloader1 " + parent);
+                }
                 try {
                     clazz = Class.forName(name, false, parent);
                     if (clazz != null) {
-                        if (log.isDebugEnabled())
+                        if (log.isDebugEnabled()) {
                             log.debug("  Loading class from parent");
-                        if (resolve)
+                        }
+                        if (resolve) {
                             resolveClass(clazz);
+                        }
                         return (clazz);
                     }
                 } catch (ClassNotFoundException e) {
@@ -1248,21 +1294,26 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
             }
 
             // (2) Search local repositories
-            if (log.isDebugEnabled())
+            // 使用WebappClassLoader加载类
+            if (log.isDebugEnabled()) {
                 log.debug("  Searching local repositories");
+            }
             try {
                 clazz = findClass(name);
                 if (clazz != null) {
-                    if (log.isDebugEnabled())
+                    if (log.isDebugEnabled()) {
                         log.debug("  Loading class from local repository");
-                    if (resolve)
+                    }
+                    if (resolve) {
                         resolveClass(clazz);
+                    }
                     return (clazz);
                 }
             } catch (ClassNotFoundException e) {
                 // Ignore
             }
 
+            // 如果到这里类还没被加载，那么无条件的委托给父类加载器去加载
             // (3) Delegate to parent unconditionally
             if (!delegateLoad) {
                 if (log.isDebugEnabled())
@@ -1282,6 +1333,7 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
             }
         }
 
+        // 还没有，就抛出ClassNotFoundException
         throw new ClassNotFoundException(name);
     }
 
@@ -1290,14 +1342,20 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
         // It is not permitted to load new classes once the web application has
         // been stopped.
         try {
+
+            // 校验状态
             checkStateForResourceLoading(className);
         } catch (IllegalStateException ise) {
+
+            // 如果有非法状态异常，说明当前类加载器生命周期状态非有效，类也无法加载，将异常包装成ClassNotFoundException抛出
             throw new ClassNotFoundException(ise.getMessage(), ise);
         }
     }
 
 
     protected void checkStateForResourceLoading(String resource) throws IllegalStateException {
+
+        // 如果当前类加载器的状态非有效，则抛出非法状态异常
         // It is not permitted to load resources once the web application has
         // been stopped.
         if (!state.isAvailable()) {
@@ -2274,6 +2332,8 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
             }
 
             try {
+
+                // 调用native方法将Java类的字节码解析成Class对象
                 clazz = defineClass(name, binaryContent, 0,
                         binaryContent.length, new CodeSource(codeBase, certificates));
             } catch (UnsupportedClassVersionError ucve) {
@@ -2288,7 +2348,9 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
         return clazz;
     }
 
-
+    /**
+     * 将类全路径修改为类文件路径，e.g. com.a.b.c -> com/a/b/c.class
+     */
     private String binaryNameToPath(String binaryName, boolean withLeadingSlash) {
         // 1 for leading '/', 6 for ".class"
         StringBuilder path = new StringBuilder(7 + binaryName.length());
