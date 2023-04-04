@@ -109,17 +109,23 @@ final class StandardWrapperValve
             unavailable = true;
         }
 
+        // 如果当前context未生效，且Wrapper也是未生效状态，则判断当前的情况，并设置unavailable标志
         // Check for the servlet being marked unavailable
         if (!unavailable && wrapper.isUnavailable()) {
             container.getLogger().info(sm.getString("standardWrapper.isUnavailable",
                     wrapper.getName()));
             long available = wrapper.getAvailable();
+
+            // 当前只是Servlet还未生效，告诉请求方稍后重试，并告知具体的重试时间
             if ((available > 0L) && (available < Long.MAX_VALUE)) {
                 response.setDateHeader("Retry-After", available);
                 response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE,
                         sm.getString("standardWrapper.isUnavailable",
                                 wrapper.getName()));
-            } else if (available == Long.MAX_VALUE) {
+            }
+
+            // 当前Wrapper永久无效，直接返回错误信息
+            else if (available == Long.MAX_VALUE) {
                 response.sendError(HttpServletResponse.SC_NOT_FOUND,
                         sm.getString("standardWrapper.notFound",
                                 wrapper.getName()));
@@ -129,6 +135,8 @@ final class StandardWrapperValve
 
         // Allocate a servlet instance to process this request
         try {
+
+            // 通过wrapper分配一个Servlet给当前请求/线程使用
             if (!unavailable) {
                 servlet = wrapper.allocate();
             }
@@ -261,6 +269,7 @@ final class StandardWrapperValve
             filterChain.release();
         }
 
+        // 调用deallocate，将Servlet放回Wrapper中，对于STM模式，相当于将当前已用完的Servlet返还回去
         // Deallocate the allocated servlet instance
         try {
             if (servlet != null) {
@@ -279,6 +288,8 @@ final class StandardWrapperValve
         // If this servlet has been marked permanently unavailable,
         // unload it and release this instance
         try {
+
+            // 如果当前Servlet不为空，且Wrapper已经永久无效，那么需要卸载当前Wrapper/Servlet
             if ((servlet != null) &&
                 (wrapper.getAvailable() == Long.MAX_VALUE)) {
                 wrapper.unload();
@@ -296,8 +307,12 @@ final class StandardWrapperValve
 
         long time=t2-t1;
         processingTime += time;
-        if( time > maxTime) maxTime=time;
-        if( time < minTime) minTime=time;
+        if( time > maxTime) {
+            maxTime=time;
+        }
+        if( time < minTime) {
+            minTime=time;
+        }
 
     }
 

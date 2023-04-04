@@ -170,6 +170,8 @@ public class DigesterFactory {
         EntityResolver2 resolver = new LocalResolver(SERVLET_API_PUBLIC_IDS,
                 SERVLET_API_SYSTEM_IDS, blockExternal);
         digester.setEntityResolver(resolver);
+
+        // 应用Rule（文件解析规则）
         if (rule != null) {
             digester.addRuleSet(rule);
         }

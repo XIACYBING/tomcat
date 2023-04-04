@@ -56,11 +56,20 @@ public class WebXmlParser {
 
     public WebXmlParser(boolean namespaceAware, boolean validation,
             boolean blockExternal) {
+
+        // 设置web相关的xml文件的规则集合
+        // 构造器入参为false，代表将要使用的规则非web-fragment.xml文件的规则
+        // web.xml文件规则：org.apache.tomcat.util.digester.RuleSetBase.addRuleInstances
         webRuleSet = new WebRuleSet(false);
+
+        // 新建web.xml文件转化器，在新建时会通过webRuleSet调用webDigester，将webRule应用到Digester中
         webDigester = DigesterFactory.newDigester(validation,
                 namespaceAware, webRuleSet, blockExternal);
+
+        // 生成转化器中的parser
         webDigester.getParser();
 
+        // 生成web-fragment.xml文件相关的规则和转换器
         webFragmentRuleSet = new WebRuleSet(true);
         webFragmentDigester = DigesterFactory.newDigester(validation,
                 namespaceAware, webFragmentRuleSet, blockExternal);
@@ -107,6 +116,8 @@ public class WebXmlParser {
             ruleSet = webRuleSet;
         }
 
+        // 设置xml解析后需要调用的目标对象（digester中会应用webRule，webRule会指定解析哪个xml文件节点，调用目标对象的哪个方法）
+        // 比如web.xml和web-fragment.xml文件的解析规则在：org.apache.tomcat.util.descriptor.web.WebRuleSet.addRuleInstances
         digester.push(dest);
         digester.setErrorHandler(handler);
 
@@ -116,6 +127,8 @@ public class WebXmlParser {
         }
 
         try {
+
+            // 解析web.xml/web-fragment.xml，获取规则
             digester.parse(source);
 
             if (handler.getWarnings().size() > 0 ||

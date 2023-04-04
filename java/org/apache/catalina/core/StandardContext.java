@@ -4979,6 +4979,8 @@ public class StandardContext extends ContainerBase
      *
      * @exception LifecycleException if this component detects a fatal error
      *  that prevents this component from being used
+     *
+     *  当前启动方法要考虑两个场景：首次启动和重启，因此有不少逻辑需要将资源重置后再初始化
      */
     @Override
     protected synchronized void startInternal() throws LifecycleException {
@@ -5108,6 +5110,7 @@ public class StandardContext extends ContainerBase
                 // 重新绑定当前Context对应的Loader上的ClassLoader（WebappClassLoader）
                 oldCCL = bindThread();
 
+                // 重新初始化logger
                 // Initialize logger again. Other components might have used it
                 // too early, so it should be reset.
                 logger = null;
@@ -5137,7 +5140,8 @@ public class StandardContext extends ContainerBase
                     context.setAttribute(Globals.CREDENTIAL_HANDLER, safeHandler);
                 }
 
-                // 发布生命周期时间：CONFIGURE_START_EVENT
+                // 发布生命周期事件：CONFIGURE_START_EVENT
+                // 当前生命周期事件会触发web.xml文件的解析：{@link org.apache.catalina.startup.ContextConfig.configureStart}
                 // Notify our interested LifecycleListeners
                 fireLifecycleEvent(Lifecycle.CONFIGURE_START_EVENT, null);
 
@@ -5298,6 +5302,8 @@ public class StandardContext extends ContainerBase
                 }
             }
 
+            // 启动容器后台维护线程：但是因为StandardContext并没有去设置backgroundProcessorDelay，因此实际上并不会去启动容器后台维护线程
+            // 只有StandardEngine，因为设置过backgroundProcessorDelay，会启动一个容器后台维护线程，线程会去维护Engine及其子容器的后台事务
             // Start ContainerBackgroundProcessor thread
             super.threadStart();
         } finally {
@@ -5315,8 +5321,10 @@ public class StandardContext extends ContainerBase
             log.error(sm.getString("standardContext.startFailed", getName()));
         }
 
+        // 记录启动时间
         startTime=System.currentTimeMillis();
 
+        // 广播启动成功通知
         // Send j2ee.state.running notification
         if (ok && (this.getObjectName() != null)) {
             Notification notification =
@@ -5325,6 +5333,8 @@ public class StandardContext extends ContainerBase
             broadcaster.sendNotification(notification);
         }
 
+        // 某些平台上Jar包的访问可能是互斥的，而web应用启动会访问很多Jar包，因此此处要调用gc方法，关闭对这些文件的访问
+        // 该gc和JVM的gc不一样
         // The WebResources implementation caches references to JAR files. On
         // some platforms these references may lock the JAR files. Since web
         // application start is likely to have read from lots of JARs, trigger

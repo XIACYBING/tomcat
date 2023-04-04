@@ -71,6 +71,8 @@ public class StandardEngine extends ContainerBase implements Engine {
         } catch(Exception ex) {
             log.warn(sm.getString("standardEngine.jvmRouteFail"));
         }
+
+        // 默认设置后台守护线程处理时间为10秒，即后台守护线程每十秒会处理一次后台事务
         // By default, the engine will hold the reloading thread
         backgroundProcessorDelay = 10;
 

@@ -359,6 +359,7 @@ public class WebRuleSet extends RuleSetBase {
         digester.addCallMethod(fullPrefix + "/security-role/role-name",
                                "addSecurityRole", 0);
 
+        // 解析Servlet相关内容
         digester.addRule(fullPrefix + "/servlet",
                          new ServletDefCreateRule());
         digester.addSetNext(fullPrefix + "/servlet",

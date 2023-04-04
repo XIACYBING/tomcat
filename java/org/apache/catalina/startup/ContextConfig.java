@@ -778,6 +778,7 @@ public class ContextConfig implements LifecycleListener {
                     Boolean.valueOf(context.getXmlNamespaceAware())));
         }
 
+        // 扫描web.xml文件和全局web.xml配置合并
         webConfig();
 
         context.addServletContainerInitializer(new JasperInitializer(), null);
@@ -1113,12 +1114,17 @@ public class ContextConfig implements LifecycleListener {
                 context.getXmlValidation(), context.getXmlBlockExternal());
 
         Set<WebXml> defaults = new HashSet<>();
+
+        // 获取全局的web.xml文件配置数据
         defaults.add(getDefaultWebXmlFragment(webXmlParser));
 
         WebXml webXml = createWebXml();
 
+        // 获取web应用的web.xml文件数据
         // Parse context level web.xml
         InputSource contextWebXml = getContextWebXmlSource();
+
+        // 转换web应用的web.xml文件数据，并将数据设置到webXml中
         if (!webXmlParser.parseWebXml(contextWebXml, webXml, false)) {
             ok = false;
         }
@@ -1246,7 +1252,10 @@ public class ContextConfig implements LifecycleListener {
         }
     }
 
-
+    /**
+     * 应用解析出的web.xml文件，配置Context容器
+     * @param webxml 将web.xml和web-fragment.xml文件解析完成并合并后的数据实体
+     */
     private void configureContext(WebXml webxml) {
         // As far as possible, process in alphabetical order so it is easy to
         // check everything is present
@@ -1333,13 +1342,22 @@ public class ContextConfig implements LifecycleListener {
         for (ContextService service : webxml.getServiceRefs().values()) {
             context.getNamingResources().addService(service);
         }
+
+        // 循环配置中的Servlet配置，生成对应的Wrapper文件，但暂时不生成对应的Servlet
+        // 有配置load-on-startup的Servlet会在Context容器的startInternal方法中，通过调用org.apache.catalina.core.StandardContext
+        // .loadOnStartup方法进行实例化
+        // 没有配置load-on-startup的Servlet，就会在真正被调用到的时候才会初始化
         for (ServletDef servlet : webxml.getServlets().values()) {
+
+            // 创建Servlet的Wrapper
             Wrapper wrapper = context.createWrapper();
             // Description is ignored
             // Display name is ignored
             // Icons are ignored
 
             // jsp-file gets passed to the JSP Servlet as an init-param
+
+            // 设置Servlet的相关参数
 
             if (servlet.getLoadOnStartup() != null) {
                 wrapper.setLoadOnStartup(servlet.getLoadOnStartup().intValue());
@@ -1358,6 +1376,8 @@ public class ContextConfig implements LifecycleListener {
                 wrapper.addSecurityReference(
                         roleRef.getName(), roleRef.getLink());
             }
+
+            // 设置Servlet的Class
             wrapper.setServletClass(servlet.getServletClass());
             MultipartDef multipartdef = servlet.getMultipartDef();
             if (multipartdef != null) {
@@ -1382,6 +1402,8 @@ public class ContextConfig implements LifecycleListener {
             wrapper.setOverridable(servlet.isOverridable());
             context.addChild(wrapper);
         }
+
+        // 解析servlet-mapping，servlet和路径的映射关系
         for (Entry<String, String> entry :
                 webxml.getServletMappings().entrySet()) {
             context.addServletMappingDecoded(entry.getKey(), entry.getValue());

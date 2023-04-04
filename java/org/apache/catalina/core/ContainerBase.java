@@ -193,6 +193,10 @@ public abstract class ContainerBase extends LifecycleMBeanBase
 
     /**
      * The processor delay for this component.
+     *
+     * 容器后台守护线程处理延迟时间（单位：秒）：多久处理一次后台事务
+     *
+     * 当{@code backgroundProcessorDelay > 0}时，就代表当前容器需要额外启动一个后台守护线程去处理当前容器及子容器的后台事务
      */
     protected int backgroundProcessorDelay = -1;
 
@@ -1005,7 +1009,8 @@ public abstract class ContainerBase extends LifecycleMBeanBase
         // 设置状态为STARTING，并发布相关事件
         setState(LifecycleState.STARTING);
 
-        // 启动容器后台守护线程：不同容器的后台守护线程负责不同的事情，比如Context容器的后台守护线程实现热加载，Host容器的后台守护线程会发布HostConfig变更事件，从而实现热部署
+        // 启动容器后台守护线程：不同容器的后台守护事务不同，比如Context容器的后台守护事务实现热加载，Host容器的后台守护事务会发布HostConfig变更事件，从而实现热部署
+        // 目前只有StandardEngine需要启动后台守护线程，处理自身和子容器的后台事务
         // Start our thread
         threadStart();
 
@@ -1464,7 +1469,7 @@ public abstract class ContainerBase extends LifecycleMBeanBase
                         return;
                     }
 
-                    // todo bind是做什么？
+                    // 在Context和Wrapper容器的场景下，需要保证处理类加载时使用的是WebappClassLoader，因此需要将对应的WebappClassLoader绑定到线程上，方便后续使用
                     // Ensure background processing for Contexts and Wrappers
                     // is performed under the web app's class loader
                     originalClassLoader = ((Context) container).bind(false, null);
