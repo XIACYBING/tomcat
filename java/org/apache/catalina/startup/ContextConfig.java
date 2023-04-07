@@ -1403,7 +1403,8 @@ public class ContextConfig implements LifecycleListener {
             context.addChild(wrapper);
         }
 
-        // 解析servlet-mapping，servlet和路径的映射关系
+        // <url, servletName>
+        // 解析servlet-mapping，servlet和路径的映射关系，并注册到StandardContext中，StandardContext会调用对应Wrapper添加url
         for (Entry<String, String> entry :
                 webxml.getServletMappings().entrySet()) {
             context.addServletMappingDecoded(entry.getKey(), entry.getValue());
@@ -1453,10 +1454,16 @@ public class ContextConfig implements LifecycleListener {
         // Do this last as it depends on servlets
         for (JspPropertyGroup jspPropertyGroup :
                 webxml.getJspPropertyGroups()) {
+
+            // 获取容器内当前*.jsp路径对应的Servlet名称
             String jspServletName = context.findServletMapping("*.jsp");
+
+            // 如果为空，默认为jsp
             if (jspServletName == null) {
                 jspServletName = "jsp";
             }
+
+            // 如果也有对应的Wrapper容器，则循环jspPropertyGroup下的urlPatter，添加映射
             if (context.findChild(jspServletName) != null) {
                 for (String urlPattern : jspPropertyGroup.getUrlPatterns()) {
                     context.addServletMappingDecoded(urlPattern, jspServletName, true);

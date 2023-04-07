@@ -68,10 +68,18 @@ public class DefaultInstanceManager implements InstanceManager {
         StringManager.getManager(Constants.Package);
 
     private final Context context;
+
+    /**
+     * 类注入信息Map，<ClassName, <FieldName, AnnotationName>>
+     */
     private final Map<String, Map<String, String>> injectionMap;
     protected final ClassLoader classLoader;
     protected final ClassLoader containerClassLoader;
     protected final boolean privileged;
+
+    /**
+     * 是否忽略注解信息，即不处理注解信息
+     */
     protected final boolean ignoreAnnotations;
     private final Set<String> restrictedClasses;
     private final ManagedConcurrentWeakHashMap<Class<?>, AnnotationCacheEntry[]> annotationCache =
@@ -137,25 +145,47 @@ public class DefaultInstanceManager implements InstanceManager {
 
     private Object newInstance(Object instance, Class<?> clazz)
             throws IllegalAccessException, InvocationTargetException, NamingException {
+
+        // 如果不忽略注解，则需要针对注解内容进行计算和注入处理
         if (!ignoreAnnotations) {
+
+            // 根据当前instanceManager中的injectionMap和clazz类对象信息，计算当前clazz类对象及其父类有在injectionMap中有配置的注解信息
             Map<String, String> injections = assembleInjectionsFromClassHierarchy(clazz);
+
+            // 计算当前类的字段和方法，是否有需要被处理的注解数据，并将结果放入annotationCache中
             populateAnnotationsCache(clazz, injections);
+
+            // 根据annotationCache，获取类中需要被处理的字段和方法注解数据，通过context获取需要被注入的资源，通过反射调用方法或设置字段值
             processAnnotations(instance, injections);
+
+            // 处理当前clazz类对象及其父类的PostConstruct方法
             postConstruct(instance, clazz);
         }
+
+        // 返回类实例
         return instance;
     }
 
     private Map<String, String> assembleInjectionsFromClassHierarchy(Class<?> clazz) {
+
+        // 承载当前clazz类对象及其父类的注入信息
         Map<String, String> injections = new HashMap<>();
         Map<String, String> currentInjections = null;
+
+        // 循环clazz类对象，获取注入信息
         while (clazz != null) {
+
+            // 获取当前类对象的注入信息，不为空的情况下放入injections
             currentInjections = this.injectionMap.get(clazz.getName());
             if (currentInjections != null) {
                 injections.putAll(currentInjections);
             }
+
+            // 获取父类，继续循环
             clazz = clazz.getSuperclass();
         }
+
+        // 返回获取到的注入信息
         return injections;
     }
 
@@ -184,6 +214,7 @@ public class DefaultInstanceManager implements InstanceManager {
             return;
         }
 
+        // 先获取父类，对父类的PostConstruct方法进行处理
         Class<?> superClass = clazz.getSuperclass();
         if (superClass != Object.class) {
             postConstruct(instance, superClass);
@@ -191,9 +222,13 @@ public class DefaultInstanceManager implements InstanceManager {
 
         // At the end the postconstruct annotated
         // method is invoked
+
+        // 获取当前类对象的注解缓存数据，筛选出POST_CONSTRUCT类型的注解缓存数据
         AnnotationCacheEntry[] annotations = annotationCache.get(clazz);
         for (AnnotationCacheEntry entry : annotations) {
             if (entry.getType() == AnnotationCacheEntryType.POST_CONSTRUCT) {
+
+                // 获取对应的PostConstruct方法，并通过反射调用
                 Method postConstruct = getMethod(clazz, entry);
                 synchronized (postConstruct) {
                     boolean accessibility = postConstruct.isAccessible();
@@ -249,6 +284,7 @@ public class DefaultInstanceManager implements InstanceManager {
     }
 
 
+
     /**
      * Make sure that the annotations cache has been populated for the provided
      * class.
@@ -262,23 +298,33 @@ public class DefaultInstanceManager implements InstanceManager {
      *                                      if injection fails
      */
     protected void populateAnnotationsCache(Class<?> clazz,
-            Map<String, String> injections) throws IllegalAccessException,
-            InvocationTargetException, NamingException {
+        Map<String, String> injections) throws IllegalAccessException,
+        InvocationTargetException, NamingException {
 
         List<AnnotationCacheEntry> annotations = null;
 
         while (clazz != null) {
+
+            // 获取当前类对象的注解缓存数据
             AnnotationCacheEntry[] annotationsArray = annotationCache.get(clazz);
+
+            // 为空说明需要进行注解的计算
             if (annotationsArray == null) {
+
+                // 为空说明第一次循环，否则说明非第一次循环，调用clear清除上一次循环的数据
                 if (annotations == null) {
                     annotations = new ArrayList<>();
                 } else {
                     annotations.clear();
                 }
 
+                // 上下文不为空才计算
                 if (context != null) {
                     // Initialize fields annotations for resource injection if
                     // JNDI is enabled
+
+                    // 初始化字段注解缓存
+                    // 获取所有声明的字段，并循环处理
                     Field[] fields = Introspection.getDeclaredFields(clazz);
                     for (Field field : fields) {
                         Resource resourceAnnotation;
@@ -286,56 +332,78 @@ public class DefaultInstanceManager implements InstanceManager {
                         WebServiceRef webServiceRefAnnotation;
                         PersistenceContext persistenceContextAnnotation;
                         PersistenceUnit persistenceUnitAnnotation;
+
                         if (injections != null && injections.containsKey(field.getName())) {
+
+                            // 当前字段在injections中已有需处理的注解信息，生成注解缓存并放入集合中
                             annotations.add(new AnnotationCacheEntry(
-                                    field.getName(), null,
-                                    injections.get(field.getName()),
-                                    AnnotationCacheEntryType.FIELD));
+                                field.getName(), null,
+                                injections.get(field.getName()),
+                                AnnotationCacheEntryType.FIELD));
                         } else if ((resourceAnnotation =
-                                field.getAnnotation(Resource.class)) != null) {
+                            field.getAnnotation(Resource.class)) != null) {
+
+                            // 当前字段有Resource注解需要处理，生成注解缓存并放入集合中
                             annotations.add(new AnnotationCacheEntry(field.getName(), null,
-                                    resourceAnnotation.name(), AnnotationCacheEntryType.FIELD));
+                                resourceAnnotation.name(), AnnotationCacheEntryType.FIELD));
                         } else if ((ejbAnnotation =
-                                field.getAnnotation(EJB.class)) != null) {
+                            field.getAnnotation(EJB.class)) != null) {
+
+                            // 当前字段有EJB注解需要处理，生成注解缓存并放入集合中
                             annotations.add(new AnnotationCacheEntry(field.getName(), null,
-                                    ejbAnnotation.name(), AnnotationCacheEntryType.FIELD));
+                                ejbAnnotation.name(), AnnotationCacheEntryType.FIELD));
                         } else if ((webServiceRefAnnotation =
-                                field.getAnnotation(WebServiceRef.class)) != null) {
+                            field.getAnnotation(WebServiceRef.class)) != null) {
+
+                            // 当前字段有WebServiceRef注解需要处理，生成注解缓存并放入集合中
                             annotations.add(new AnnotationCacheEntry(field.getName(), null,
-                                    webServiceRefAnnotation.name(),
-                                    AnnotationCacheEntryType.FIELD));
+                                webServiceRefAnnotation.name(),
+                                AnnotationCacheEntryType.FIELD));
                         } else if ((persistenceContextAnnotation =
-                                field.getAnnotation(PersistenceContext.class)) != null) {
+                            field.getAnnotation(PersistenceContext.class)) != null) {
+
+                            // 当前字段有PersistenceContext注解需要处理，生成注解缓存并放入集合中
                             annotations.add(new AnnotationCacheEntry(field.getName(), null,
-                                    persistenceContextAnnotation.name(),
-                                    AnnotationCacheEntryType.FIELD));
+                                persistenceContextAnnotation.name(),
+                                AnnotationCacheEntryType.FIELD));
                         } else if ((persistenceUnitAnnotation =
-                                field.getAnnotation(PersistenceUnit.class)) != null) {
+                            field.getAnnotation(PersistenceUnit.class)) != null) {
+
+                            // 当前字段有PersistenceUnit注解需要处理，生成注解缓存并放入集合中
                             annotations.add(new AnnotationCacheEntry(field.getName(), null,
-                                    persistenceUnitAnnotation.name(),
-                                    AnnotationCacheEntryType.FIELD));
+                                persistenceUnitAnnotation.name(),
+                                AnnotationCacheEntryType.FIELD));
                         }
                     }
                 }
 
+                // 初始化方法注解缓存：主要是标注@PostConstruct和@PreDestroy注解的方法
                 // Initialize methods annotations
                 Method[] methods = Introspection.getDeclaredMethods(clazz);
+
+                // 如果一个类中声明了多个@PostConstruct/@PreDestroy方法，是非法的，会抛出异常
+                // xml声明 > 类中注解，前提是xml文件中声明的方法在clazz中是确实存在的
+                // 每个类对象都可以有一个postConstruct和preDestroy方法
                 Method postConstruct = null;
-                String postConstructFromXml = postConstructMethods.get(clazz.getName());
                 Method preDestroy = null;
+
+                // 获取xml文件中配置的当前类的PostConstruct和PreDestroy方法
+                String postConstructFromXml = postConstructMethods.get(clazz.getName());
                 String preDestroyFromXml = preDestroyMethods.get(clazz.getName());
                 for (Method method : methods) {
+
+                    // context不为空时，需要计算方法上的注解信息
                     if (context != null) {
                         // Resource injection only if JNDI is enabled
                         if (injections != null &&
-                                Introspection.isValidSetter(method)) {
+                            Introspection.isValidSetter(method)) {
                             String fieldName = Introspection.getPropertyName(method);
                             if (injections.containsKey(fieldName)) {
                                 annotations.add(new AnnotationCacheEntry(
-                                        method.getName(),
-                                        method.getParameterTypes(),
-                                        injections.get(fieldName),
-                                        AnnotationCacheEntryType.SETTER));
+                                    method.getName(),
+                                    method.getParameterTypes(),
+                                    injections.get(fieldName),
+                                    AnnotationCacheEntryType.SETTER));
                                 continue;
                             }
                         }
@@ -345,82 +413,96 @@ public class DefaultInstanceManager implements InstanceManager {
                         PersistenceContext persistenceContextAnnotation;
                         PersistenceUnit persistenceUnitAnnotation;
                         if ((resourceAnnotation =
-                                method.getAnnotation(Resource.class)) != null) {
+                            method.getAnnotation(Resource.class)) != null) {
                             annotations.add(new AnnotationCacheEntry(
-                                    method.getName(),
-                                    method.getParameterTypes(),
-                                    resourceAnnotation.name(),
-                                    AnnotationCacheEntryType.SETTER));
+                                method.getName(),
+                                method.getParameterTypes(),
+                                resourceAnnotation.name(),
+                                AnnotationCacheEntryType.SETTER));
                         } else if ((ejbAnnotation =
-                                method.getAnnotation(EJB.class)) != null) {
+                            method.getAnnotation(EJB.class)) != null) {
                             annotations.add(new AnnotationCacheEntry(
-                                    method.getName(),
-                                    method.getParameterTypes(),
-                                    ejbAnnotation.name(),
-                                    AnnotationCacheEntryType.SETTER));
+                                method.getName(),
+                                method.getParameterTypes(),
+                                ejbAnnotation.name(),
+                                AnnotationCacheEntryType.SETTER));
                         } else if ((webServiceRefAnnotation =
-                                method.getAnnotation(WebServiceRef.class)) != null) {
+                            method.getAnnotation(WebServiceRef.class)) != null) {
                             annotations.add(new AnnotationCacheEntry(
-                                    method.getName(),
-                                    method.getParameterTypes(),
-                                    webServiceRefAnnotation.name(),
-                                    AnnotationCacheEntryType.SETTER));
+                                method.getName(),
+                                method.getParameterTypes(),
+                                webServiceRefAnnotation.name(),
+                                AnnotationCacheEntryType.SETTER));
                         } else if ((persistenceContextAnnotation =
-                                method.getAnnotation(PersistenceContext.class)) != null) {
+                            method.getAnnotation(PersistenceContext.class)) != null) {
                             annotations.add(new AnnotationCacheEntry(
-                                    method.getName(),
-                                    method.getParameterTypes(),
-                                    persistenceContextAnnotation.name(),
-                                    AnnotationCacheEntryType.SETTER));
+                                method.getName(),
+                                method.getParameterTypes(),
+                                persistenceContextAnnotation.name(),
+                                AnnotationCacheEntryType.SETTER));
                         } else if ((persistenceUnitAnnotation = method.getAnnotation(PersistenceUnit.class)) != null) {
                             annotations.add(new AnnotationCacheEntry(
-                                    method.getName(),
-                                    method.getParameterTypes(),
-                                    persistenceUnitAnnotation.name(),
-                                    AnnotationCacheEntryType.SETTER));
+                                method.getName(),
+                                method.getParameterTypes(),
+                                persistenceUnitAnnotation.name(),
+                                AnnotationCacheEntryType.SETTER));
                         }
                     }
 
-                    postConstruct = findPostConstruct(postConstruct, postConstructFromXml, method);
+                    // 判断当前方法是否声明PostConstruct和PreDestroy注解，如果是，将当前方法作为postConstruct/preDestroy返回
 
+                    // 如果postConstruct不为空，且method也标记了对应的注解，且method是有效的回调方法，则会抛出异常
+                    // 除非method的名称是postConstructFromXml，因为xml优先级大于clazz中的注解声明
+                    postConstruct = findPostConstruct(postConstruct, postConstructFromXml, method);
                     preDestroy = findPreDestroy(preDestroy, preDestroyFromXml, method);
                 }
 
+                // 如果postConstruct方法不为空，则生成注解缓存加入集合中
                 if (postConstruct != null) {
                     annotations.add(new AnnotationCacheEntry(
-                            postConstruct.getName(),
-                            postConstruct.getParameterTypes(), null,
-                            AnnotationCacheEntryType.POST_CONSTRUCT));
-                } else if (postConstructFromXml != null) {
+                        postConstruct.getName(),
+                        postConstruct.getParameterTypes(), null,
+                        AnnotationCacheEntryType.POST_CONSTRUCT));
+                }
+
+                // 进入当前判断，说明xml文件中声明的postConstruct方法在clazz中并不存在，需要抛出异常
+                else if (postConstructFromXml != null) {
                     throw new IllegalArgumentException("Post construct method "
                         + postConstructFromXml + " for class " + clazz.getName()
                         + " is declared in deployment descriptor but cannot be found.");
                 }
+
+                // preDestroy和postConstruct的处理一致
                 if (preDestroy != null) {
                     annotations.add(new AnnotationCacheEntry(
-                            preDestroy.getName(),
-                            preDestroy.getParameterTypes(), null,
-                            AnnotationCacheEntryType.PRE_DESTROY));
+                        preDestroy.getName(),
+                        preDestroy.getParameterTypes(), null,
+                        AnnotationCacheEntryType.PRE_DESTROY));
                 } else if (preDestroyFromXml != null) {
                     throw new IllegalArgumentException("Pre destroy method "
                         + preDestroyFromXml + " for class " + clazz.getName()
                         + " is declared in deployment descriptor but cannot be found.");
                 }
+
+                // 当前clazz计算出的字段和方法注解数据集合如果为空，使用特殊的对象标记，不为空则将集合转换为数组赋值
                 if (annotations.isEmpty()) {
                     // Use common object to save memory
                     annotationsArray = ANNOTATIONS_EMPTY;
                 } else {
                     annotationsArray = annotations.toArray(
-                            new AnnotationCacheEntry[annotations.size()]);
+                        new AnnotationCacheEntry[annotations.size()]);
                 }
+
+                // 加锁annotationCache，将clazz和字段方法注解计算结果放入缓存中
                 synchronized (annotationCache) {
                     annotationCache.put(clazz, annotationsArray);
                 }
             }
+
+            // 获取父类，继续处理
             clazz = clazz.getSuperclass();
         }
     }
-
 
     /**
      * Inject resources in specified instance.
@@ -435,6 +517,7 @@ public class DefaultInstanceManager implements InstanceManager {
     protected void processAnnotations(Object instance, Map<String, String> injections)
             throws IllegalAccessException, InvocationTargetException, NamingException {
 
+        // context为空，无法获取到资源，无需处理
         if (context == null) {
             // No resource injection
             return;
@@ -443,18 +526,27 @@ public class DefaultInstanceManager implements InstanceManager {
         Class<?> clazz = instance.getClass();
 
         while (clazz != null) {
+
+            // 获取当前类对象的注解缓存信息
             AnnotationCacheEntry[] annotations = annotationCache.get(clazz);
             for (AnnotationCacheEntry entry : annotations) {
+
+                // 如果是setter方法，通过lookupMethodResource方法调用方法
                 if (entry.getType() == AnnotationCacheEntryType.SETTER) {
                     lookupMethodResource(context, instance,
                             getMethod(clazz, entry),
                             entry.getName(), clazz);
-                } else if (entry.getType() == AnnotationCacheEntryType.FIELD) {
+                }
+
+                // 如果是字段，通过lookupFieldResource对字段赋值
+                else if (entry.getType() == AnnotationCacheEntryType.FIELD) {
                     lookupFieldResource(context, instance,
                             getField(clazz, entry),
                             entry.getName(), clazz);
                 }
             }
+
+            // 获取父类，继续处理
             clazz = clazz.getSuperclass();
         }
     }
@@ -549,6 +641,7 @@ public class DefaultInstanceManager implements InstanceManager {
 
         String normalizedName = normalize(name);
 
+        // 通过Context获取需要被注入的资源
         if ((normalizedName != null) && (normalizedName.length() > 0)) {
             lookedupResource = context.lookup(normalizedName);
         } else {
@@ -556,6 +649,7 @@ public class DefaultInstanceManager implements InstanceManager {
                 context.lookup(clazz.getName() + "/" + field.getName());
         }
 
+        // 字段加锁，通过反射调用
         synchronized (field) {
             accessibility = field.isAccessible();
             field.setAccessible(true);
@@ -591,6 +685,7 @@ public class DefaultInstanceManager implements InstanceManager {
 
         String normalizedName = normalize(name);
 
+        // 通过context获取资源
         if ((normalizedName != null) && (normalizedName.length() > 0)) {
             lookedupResource = context.lookup(normalizedName);
         } else {
@@ -598,6 +693,7 @@ public class DefaultInstanceManager implements InstanceManager {
                     clazz.getName() + "/" + Introspection.getPropertyName(method));
         }
 
+        // 方法加锁，通过反射调用
         synchronized (method) {
             accessibility = method.isAccessible();
             method.setAccessible(true);
@@ -719,15 +815,25 @@ public class DefaultInstanceManager implements InstanceManager {
             Class<? extends Annotation> annotation) {
         Method result = currentMethod;
         if (methodNameFromXml != null) {
+
+            // 如果当前方法和xml文件中声明的方法名称一致
             if (method.getName().equals(methodNameFromXml)) {
+
+                // 当前method非有效声明周期回调方法（无入参、无出参、非静态方法、方法未声明异常抛出），抛出异常
                 if (!Introspection.isValidLifecycleCallback(method)) {
                     throw new IllegalArgumentException(
                             "Invalid " + annotation.getName() + " annotation");
                 }
+
+                // 否则将当前方法作为结果方法返回
                 result = method;
             }
         } else {
+
+            // 如果当前方法有声明对应注解：PostConstruct/PreDestroy
             if (method.isAnnotationPresent(annotation)) {
+
+                // 当前声明对应注解的方法不为空，或要判断的method非有效声明周期回调方法（无入参、无出参、非静态方法、方法未声明异常抛出），则抛出异常
                 if (currentMethod != null || !Introspection.isValidLifecycleCallback(method)) {
                     throw new IllegalArgumentException(
                             "Invalid " + annotation.getName() + " annotation");

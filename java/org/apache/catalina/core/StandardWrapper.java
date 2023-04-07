@@ -91,8 +91,12 @@ public class StandardWrapper extends ContainerBase
     public StandardWrapper() {
 
         super();
+
+        // 设置Valve
         swValve=new StandardWrapperValve();
         pipeline.setBasic(swValve);
+
+        // 设置通知广播器
         broadcaster = new NotificationBroadcasterSupport();
 
     }
@@ -140,12 +144,16 @@ public class StandardWrapper extends ContainerBase
 
     /**
      * The (single) possibly uninitialized instance of this servlet.
+     *
+     * Servlet实例：非STM模式下，记录对应的单例Servlet；STM模式下，一般记录的是第一个Servlet
      */
     protected volatile Servlet instance = null;
 
 
     /**
      * Flag that indicates if this instance has been initialized
+     *
+     * Servlet实例是否已经初始化完成
      */
     protected volatile boolean instanceInitialized = false;
 
@@ -159,6 +167,8 @@ public class StandardWrapper extends ContainerBase
 
     /**
      * Mappings associated with the wrapper.
+     *
+     * 当前Servlet支持的url集合
      */
     protected final ArrayList<String> mappings = new ArrayList<>();
 
@@ -199,6 +209,9 @@ public class StandardWrapper extends ContainerBase
      *
      * STM：single thread model
      * 代表一个Servlet只能同时被一个线程访问，基于此，需要{@link #instancePool}缓存并提供多个Servlet，对外提供服务
+     *
+     * 当前属性最开始时为false，只有在加载对应的Servlet时，通过判断Servlet是否{@link SingleThreadModel}的实现，从而设置{@link #singleThreadModel}和
+     * {@link #instancePool}
      */
     protected volatile boolean singleThreadModel = false;
 
@@ -235,6 +248,10 @@ public class StandardWrapper extends ContainerBase
 
     /**
      * Wait time for servlet unload in ms.
+     *
+     * 当进行卸载Servlet时，可能有其他请求正在使用当前Servlet，这时候需要循环等待其他线程使用完成
+     *
+     * 循环等待时间：单位为毫秒
      */
     protected long unloadDelay = 2000;
 
@@ -337,13 +354,17 @@ public class StandardWrapper extends ContainerBase
     public void setAvailable(long available) {
 
         long oldAvailable = this.available;
+
+        // 如果当前available已经大于当前时间，说明Servlet还不可用，将入参的available设置到属性上即可
         if (available > System.currentTimeMillis()) {
             this.available = available;
         } else {
+
+            // 否则说明Servlet已经可用，直接设置available属性为0即可，
             this.available = 0L;
         }
 
-        // 发布available属性变化时间
+        // 发布available属性变化事件
         support.firePropertyChange("available", Long.valueOf(oldAvailable),
                                    Long.valueOf(this.available));
     }
@@ -458,16 +479,21 @@ public class StandardWrapper extends ContainerBase
     @Override
     public void setParent(Container container) {
 
+        // 父容器要求非空，且必须是Context
         if ((container != null) &&
-            !(container instanceof Context))
+            !(container instanceof Context)) {
             throw new IllegalArgumentException
                 (sm.getString("standardWrapper.notContext"));
+        }
+
+        // 如果是StandardContext，继承swallowOutput和unloadDelay属性
         if (container instanceof StandardContext) {
             swallowOutput = ((StandardContext)container).getSwallowOutput();
             unloadDelay = ((StandardContext)container).getUnloadDelay();
         }
-        super.setParent(container);
 
+        // 调用父类方法，设置父容器
+        super.setParent(container);
     }
 
 
@@ -586,7 +612,9 @@ public class StandardWrapper extends ContainerBase
 
     }
 
-
+    /**
+     * 获取当前Servlet支持的Http请求方法
+     */
     @Override
     public String[] getServletMethods() throws ServletException {
 
@@ -602,6 +630,7 @@ public class StandardWrapper extends ContainerBase
         allow.add("TRACE");
         allow.add("OPTIONS");
 
+        // 通过servletClazz和父容器已声明的方法，判断当前Servlet支持哪几种Http请求方法
         Method[] methods = getAllDeclaredMethods(servletClazz);
         for (int i=0; methods != null && i<methods.length; i++) {
             Method m = methods[i];
@@ -657,14 +686,20 @@ public class StandardWrapper extends ContainerBase
      * Execute a periodic task, such as reloading, etc. This method will be
      * invoked inside the classloading context of this container. Unexpected
      * throwables will be caught and logged.
+     *
+     * 后台事务处理：一般由{@link StandardEngine}启动一个守护线程，守护线程处理{@link StandardEngine}容器及其子容器的后台事务
      */
     @Override
     public void backgroundProcess() {
+
+        // 调用父类的后台事务处理方法
         super.backgroundProcess();
 
-        if (!getState().isAvailable())
+        if (!getState().isAvailable()) {
             return;
+        }
 
+        // 发布周期事件
         if (getServlet() instanceof PeriodicEventListener) {
             ((PeriodicEventListener) getServlet()).periodicEvent();
         }
@@ -735,14 +770,18 @@ public class StandardWrapper extends ContainerBase
     @Override
     public void addMapping(String mapping) {
 
+        // 加锁并添加url的映射
         mappingsLock.writeLock().lock();
         try {
             mappings.add(mapping);
         } finally {
             mappingsLock.writeLock().unlock();
         }
-        if(parent.getState().equals(LifecycleState.STARTED))
+
+        // StandardContext容器状态正常的话，发布ADD_MAPPING_EVENT
+        if(parent.getState().equals(LifecycleState.STARTED)) {
             fireContainerEvent(ADD_MAPPING_EVENT, mapping);
+        }
 
     }
 
@@ -793,6 +832,7 @@ public class StandardWrapper extends ContainerBase
         boolean newInstance = false;
 
         // 如果不是STM模式，可以直接返回同一个Servlet实例，那么要做的就是检查当前是否有Servlet实例，没有的话加载并返回
+        //
         // If not SingleThreadedModel, return the same instance every time
         if (!singleThreadModel) {
 
@@ -806,12 +846,15 @@ public class StandardWrapper extends ContainerBase
                                 log.debug("Allocating non-STM instance");
                             }
 
+                            // 只有当加载了Servlet后，我们才知道它是否继承了SingleThreadModel
                             // Note: We don't know if the Servlet implements
                             // SingleThreadModel until we have loaded it.
 
                             // 加载Servlet：实例化并完成相关配置
                             instance = loadServlet();
                             newInstance = true;
+
+                            // 非STM模式，countAllocated自增，避免并发操作导致unload异常
                             if (!singleThreadModel) {
                                 // For non-STM, increment here to prevent a race
                                 // condition with unload. Bug 43683, test case
@@ -833,7 +876,8 @@ public class StandardWrapper extends ContainerBase
                 }
             }
 
-            // 如果一开始非STM模式，但是在运行过程中修改为STM模式，为了避免可能存在的思索，此处需要将实例化（如果有）的Servlet加入实例池，方便后续使用
+            // 如果一开始非STM模式，但是在运行过程中发现Servlet为SingleModelServlet，则会修改singleThreadModel
+            // 为true，所以此处需要再进行一次判断
             if (singleThreadModel) {
                 if (newInstance) {
                     // Have to do this outside of the sync above to prevent a
@@ -1050,12 +1094,16 @@ public class StandardWrapper extends ContainerBase
      */
     @Override
     public synchronized void load() throws ServletException {
+
+        // 加载Servlet实例
         instance = loadServlet();
 
+        // 初始化Servlet实例
         if (!instanceInitialized) {
             initServlet(instance);
         }
 
+        // JSP的支持
         if (isJspServlet) {
             StringBuilder oname = new StringBuilder(getDomain());
 
@@ -1090,9 +1138,11 @@ public class StandardWrapper extends ContainerBase
      */
     public synchronized Servlet loadServlet() throws ServletException {
 
+        // 如果非STM模式，且实例当前不为空，直接返回
         // Nothing to do if we already have an instance or an instance pool
-        if (!singleThreadModel && (instance != null))
+        if (!singleThreadModel && (instance != null)) {
             return instance;
+        }
 
         PrintStream out = System.out;
         if (swallowOutput) {
@@ -1102,6 +1152,8 @@ public class StandardWrapper extends ContainerBase
         Servlet servlet;
         try {
             long t1=System.currentTimeMillis();
+
+            // Servlet的Class为空，当前无法加载，设置当前Wrapper的available为无效
             // Complain if no servlet class has been specified
             if (servletClass == null) {
                 unavailable(null);
@@ -1109,6 +1161,7 @@ public class StandardWrapper extends ContainerBase
                     (sm.getString("standardWrapper.notClass", getName()));
             }
 
+            // 获取父容器（StandardContext）的实例管理器
             InstanceManager instanceManager = ((StandardContext)getParent()).getInstanceManager();
             try {
 
@@ -1135,6 +1188,7 @@ public class StandardWrapper extends ContainerBase
                     (sm.getString("standardWrapper.instantiate", servletClass), e);
             }
 
+            // MultipartConfig注解的处理
             if (multipartConfigElement == null) {
                 MultipartConfig annotation =
                         servlet.getClass().getAnnotation(MultipartConfig.class);
@@ -1144,8 +1198,10 @@ public class StandardWrapper extends ContainerBase
                 }
             }
 
+            // 处理Servlet的ServletSecurity注解
             processServletSecurityAnnotation(servlet.getClass());
 
+            // ContainerServlet关联Wrapper容器
             // Special handling for ContainerServlet instances
             // Note: The InstanceManager checks if the application is permitted
             //       to load ContainerServlets
@@ -1155,15 +1211,22 @@ public class StandardWrapper extends ContainerBase
 
             classLoadTime=(int) (System.currentTimeMillis() -t1);
 
+            // 如果当前Servlet是SingleThreadModel的实现，则说明当前Servlet应该属于STM模式
             if (servlet instanceof SingleThreadModel) {
+
+                // 初始化实例池
                 if (instancePool == null) {
                     instancePool = new Stack<>();
                 }
+
+                // 设置STM的flag为true
                 singleThreadModel = true;
             }
 
+            // 初始化Servlet：其实就是调用Servlet的init(ServletConfig)方法
             initServlet(servlet);
 
+            // 发布容器事件：wrapper加载Servlet
             fireContainerEvent("load", this);
 
             loadTime=System.currentTimeMillis() -t1;
@@ -1226,10 +1289,16 @@ public class StandardWrapper extends ContainerBase
     private synchronized void initServlet(Servlet servlet)
             throws ServletException {
 
-        if (instanceInitialized && !singleThreadModel) return;
+        // 如果已初始化且非STM模式，不处理
+        if (instanceInitialized && !singleThreadModel) {
+            return;
+        }
 
         // Call the initialization method of this servlet
         try {
+
+            // 调用Servlet的init方法，设置ServletConfig
+            // GenericServlet的init(ServletConfig)方法中，处理设置ServletConfig外，还会调用自身的init无参方法
             if( Globals.IS_SECURITY_ENABLED) {
                 boolean success = false;
                 try {
@@ -1249,6 +1318,7 @@ public class StandardWrapper extends ContainerBase
                 servlet.init(facade);
             }
 
+            // 设置instanceInitialized标识，说明实例初始化完成
             instanceInitialized = true;
         } catch (UnavailableException f) {
             unavailable(f);
@@ -1335,14 +1405,15 @@ public class StandardWrapper extends ContainerBase
     @Override
     public void unavailable(UnavailableException unavailable) {
         getServletContext().log(sm.getString("standardWrapper.unavailable", getName()));
-        if (unavailable == null)
+        if (unavailable == null) {
             setAvailable(Long.MAX_VALUE);
-        else if (unavailable.isPermanent())
+        } else if (unavailable.isPermanent()) {
             setAvailable(Long.MAX_VALUE);
-        else {
+        } else {
             int unavailableSeconds = unavailable.getUnavailableSeconds();
-            if (unavailableSeconds <= 0)
+            if (unavailableSeconds <= 0) {
                 unavailableSeconds = 60;        // Arbitrary default
+            }
             setAvailable(System.currentTimeMillis() +
                          (unavailableSeconds * 1000L));
         }
@@ -1351,6 +1422,8 @@ public class StandardWrapper extends ContainerBase
 
 
     /**
+     * 卸载所有已加载的Servlet实例：在整个Servlet引擎关闭前调用，或在重加载Servlet时调用
+     *
      * Unload all initialized instances of this servlet, after calling the
      * <code>destroy()</code> method for each instance.  This can be used,
      * for example, prior to shutting down the entire servlet engine, or
@@ -1363,31 +1436,50 @@ public class StandardWrapper extends ContainerBase
     @Override
     public synchronized void unload() throws ServletException {
 
+        // 非STM模式，且Servlet实例为空，无需unload，直接返回
         // Nothing to do if we have never loaded the instance
-        if (!singleThreadModel && (instance == null))
+        if (!singleThreadModel && (instance == null)) {
             return;
+        }
+
+        // 标记正在unload
         unloading = true;
 
+        // 如果当前正在有其他请求正在使用当前Servlet，则不断循环等待
         // Loaf a while if the current instance is allocated
         // (possibly more than once if non-STM)
         if (countAllocated.get() > 0) {
+
+            // 重试次数
             int nRetries = 0;
+
+            // 卸载每次等待的毫秒数
+            // 默认循环20次
             long delay = unloadDelay / 20;
+
+            // 重试
             while ((nRetries < 21) && (countAllocated.get() > 0)) {
+
+                // 每十次输出一条日志
                 if ((nRetries % 10) == 0) {
                     log.info(sm.getString("standardWrapper.waiting",
                                           countAllocated.toString(),
                                           getName()));
                 }
+
+                // 休眠等待
                 try {
                     Thread.sleep(delay);
                 } catch (InterruptedException e) {
                     // Ignore
                 }
+
+                // 重试次数自增
                 nRetries++;
             }
         }
 
+        // 如果初始化完成，相应的，需要调用Servlet的destroy方法
         if (instanceInitialized) {
             PrintStream out = System.out;
             if (swallowOutput) {
@@ -1418,6 +1510,8 @@ public class StandardWrapper extends ContainerBase
                     (sm.getString("standardWrapper.destroyException", getName()),
                      t);
             } finally {
+
+                // 通过InstanceManager销毁Servlet实例：其实就是处理类似@PreDestroy注解的方法
                 // Annotation processing
                 if (!((Context) getParent()).getIgnoreAnnotations()) {
                     try {
@@ -1449,6 +1543,7 @@ public class StandardWrapper extends ContainerBase
             Registry.getRegistry(null, null).unregisterComponent(jspMonitorON);
         }
 
+        // 如果是STM模式，且instancePool不为空，需要调用instancePool中每个Servlet实例的destroy方法 todo 此处的逻辑不会导致instance的destroy方法被调用两次吗
         if (singleThreadModel && (instancePool != null)) {
             try {
                 while (!instancePool.isEmpty()) {
@@ -1462,6 +1557,8 @@ public class StandardWrapper extends ContainerBase
                     } else {
                         s.destroy();
                     }
+
+                    // 通过InstanceManager销毁Servlet实例：其实就是处理类似@PreDestroy注解的方法
                     // Annotation processing
                     if (!((Context) getParent()).getIgnoreAnnotations()) {
                        ((StandardContext)getParent()).getInstanceManager().destroyInstance(s);
@@ -1482,9 +1579,13 @@ public class StandardWrapper extends ContainerBase
             nInstances = 0;
         }
 
+        // 设置STM模式为false
         singleThreadModel = false;
 
+        // 设置unloading为false
         unloading = false;
+
+        // 发布unload事件
         fireContainerEvent("unload", this);
 
     }
@@ -1703,6 +1804,7 @@ public class StandardWrapper extends ContainerBase
         // Start up this component
         super.startInternal();
 
+        // 设置available属性为0，表示当前Servlet可用，可以对外提供服务了
         setAvailable(0L);
 
         // 发布启动事件
@@ -1727,6 +1829,7 @@ public class StandardWrapper extends ContainerBase
     @Override
     protected synchronized void stopInternal() throws LifecycleException {
 
+        // 设置available属性为Long.MAX_VALUE，表示当前Servlet永久不可用
         setAvailable(Long.MAX_VALUE);
 
         // Send j2ee.state.stopping notification
@@ -1737,6 +1840,7 @@ public class StandardWrapper extends ContainerBase
             broadcaster.sendNotification(notification);
         }
 
+        // 卸载所有已加载的Servlet实例
         // Shut down our servlet instance (if it has been initialized)
         try {
             unload();
@@ -1745,6 +1849,7 @@ public class StandardWrapper extends ContainerBase
                       ("standardWrapper.unloadException", getName()), e);
         }
 
+        // 调用父类的stopInternal方法，关闭当前容器
         // Shut down this component
         super.stopInternal();
 

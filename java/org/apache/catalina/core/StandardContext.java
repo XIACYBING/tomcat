@@ -533,9 +533,14 @@ public class StandardContext extends ContainerBase
     /**
      * The servlet mappings for this web application, keyed by
      * matching pattern.
+     *
+     * 请求url的模式字符串和Servlet的Wrapper名称的映射
      */
     private HashMap<String, String> servletMappings = new HashMap<>();
 
+    /**
+     * ServletMappings操作的锁
+     */
     private final Object servletMappingsLock = new Object();
 
 
@@ -2798,13 +2803,16 @@ public class StandardContext extends ContainerBase
         // Global JspServlet
         Wrapper oldJspServlet = null;
 
+        // 容器类型判断
         if (!(child instanceof Wrapper)) {
             throw new IllegalArgumentException
                 (sm.getString("standardContext.notWrapper"));
         }
 
+        // 如果是jsp的Wrapper
         boolean isJspServlet = "jsp".equals(child.getName());
 
+        // 且原子容器不为空，则需要先移除原子容器
         // Allow webapp to override JspServlet inherited from global web.xml.
         if (isJspServlet) {
             oldJspServlet = (Wrapper) findChild("jsp");
@@ -2813,8 +2821,10 @@ public class StandardContext extends ContainerBase
             }
         }
 
+        // 添加子容器
         super.addChild(child);
 
+        // 将原jsp子容器的路径，移动到新的jsp子容器上
         if (isJspServlet && oldJspServlet != null) {
             /*
              * The webapp-specific JspServlet inherits all the mappings
@@ -3149,28 +3159,44 @@ public class StandardContext extends ContainerBase
     @Override
     public void addServletMappingDecoded(String pattern, String name,
                                   boolean jspWildCard) {
+
+        // 如果对应的子容器（StandardWrapper）为空，则不处理
         // Validate the proposed mapping
-        if (findChild(name) == null)
+        if (findChild(name) == null) {
             throw new IllegalArgumentException
                 (sm.getString("standardContext.servletMap.name", name));
+        }
+
+        // 添加urlPattern：主要是增加斜杠/
         String adjustedPattern = adjustURLPattern(pattern);
-        if (!validateURLPattern(adjustedPattern))
+
+        // 校验urlPattern：主要是校验/和*.等字符的组合清空
+        if (!validateURLPattern(adjustedPattern)) {
             throw new IllegalArgumentException
                 (sm.getString("standardContext.servletMap.pattern", adjustedPattern));
+        }
 
+        // 加锁，并注册路径
         // Add this mapping to our registered set
         synchronized (servletMappingsLock) {
+
+            // 判断当前路径是否已有对应的Servlet，如果有，则移除
             String name2 = servletMappings.get(adjustedPattern);
             if (name2 != null) {
                 // Don't allow more than one servlet on the same pattern
                 Wrapper wrapper = (Wrapper) findChild(name2);
                 wrapper.removeMapping(adjustedPattern);
             }
+
+            // 添加url和ServletName的映射
             servletMappings.put(adjustedPattern, name);
         }
+
+        // 获取StandardWrapper，添加urlPattern
         Wrapper wrapper = (Wrapper) findChild(name);
         wrapper.addMapping(adjustedPattern);
 
+        // 发布容器事件：addServletMapping
         fireContainerEvent("addServletMapping", adjustedPattern);
     }
 
@@ -4135,6 +4161,8 @@ public class StandardContext extends ContainerBase
     public void removeServletMapping(String pattern) {
 
         String name = null;
+
+        // 移除对应patter的映射
         synchronized (servletMappingsLock) {
             name = servletMappings.remove(pattern);
         }
@@ -5724,15 +5752,23 @@ public class StandardContext extends ContainerBase
      */
     protected String adjustURLPattern(String urlPattern) {
 
-        if (urlPattern == null)
+        if (urlPattern == null) {
             return (urlPattern);
-        if (urlPattern.startsWith("/") || urlPattern.startsWith("*."))
+        }
+        if (urlPattern.startsWith("/") || urlPattern.startsWith("*.")) {
             return (urlPattern);
-        if (!isServlet22())
+        }
+
+        // 特殊配置处理，如果没有该配置，则说明对应url不需要斜杠
+        if (!isServlet22()) {
             return (urlPattern);
-        if(log.isDebugEnabled())
+        }
+        if(log.isDebugEnabled()) {
             log.debug(sm.getString("standardContext.urlPattern.patternWarning",
                          urlPattern));
+        }
+
+        // 添加斜杠前缀
         return ("/" + urlPattern);
 
     }
@@ -6231,27 +6267,51 @@ public class StandardContext extends ContainerBase
      */
     private boolean validateURLPattern(String urlPattern) {
 
-        if (urlPattern == null)
+        // 不可为空
+        if (urlPattern == null) {
             return false;
+        }
+
+        // 不可有\n\r的特殊字符
         if (urlPattern.indexOf('\n') >= 0 || urlPattern.indexOf('\r') >= 0) {
             return false;
         }
+
+        // 空url是符合要求的
         if (urlPattern.equals("")) {
             return true;
         }
+
+        // 以*.开头
         if (urlPattern.startsWith("*.")) {
+
+            // 如果是以*.开头，且没有/
             if (urlPattern.indexOf('/') < 0) {
+
+                // 特殊判断：主要是判断后并进行info日志记录
                 checkUnusualURLPattern(urlPattern);
                 return true;
-            } else
+            }
+
+            // 以*.开头，但是有/，这种是非法的，比如*./index.jsp
+            else {
                 return false;
+            }
         }
+
+        // 以/开头，且没有*.字符的，认为是符合要求
         if ( (urlPattern.startsWith("/")) &&
                 (urlPattern.indexOf("*.") < 0)) {
+
+            // 特殊判断：主要是判断后并进行info日志记录
             checkUnusualURLPattern(urlPattern);
             return true;
-        } else
+        }
+
+        // 到当前链路，说明全部不符合要求
+        else {
             return false;
+        }
 
     }
 

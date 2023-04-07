@@ -67,6 +67,8 @@ public final class ApplicationFilterFactory {
                 // Security: Do not recycle
                 filterChain = new ApplicationFilterChain();
             } else {
+
+                // 如果是重用的请求，请求中的filterChain实例可能不为空，上一个请求使用完成后只会调用filterChain.release释放掉Servlet和拦截器相关信息
                 filterChain = (ApplicationFilterChain) req.getFilterChain();
                 if (filterChain == null) {
                     filterChain = new ApplicationFilterChain();

@@ -16,10 +16,16 @@
  */
 package org.apache.tomcat;
 
+import org.apache.catalina.core.DefaultInstanceManager;
+
 import java.lang.reflect.InvocationTargetException;
 
 import javax.naming.NamingException;
 
+/**
+ * 实例管理器：通过反射构建类对象的基础上，对类对象进行必要的处理，比如{@link DefaultInstanceManager}会去处理类中的相关注解，比如{@link javax.annotation.Resource}、
+ * {@link javax.ejb.EJB}、{@link javax.annotation.PostConstruct}和{@link javax.annotation.PreDestroy}等
+ */
 public interface InstanceManager {
 
     Object newInstance(Class<?> clazz) throws IllegalAccessException, InvocationTargetException,

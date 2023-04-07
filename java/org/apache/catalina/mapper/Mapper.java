@@ -693,8 +693,14 @@ public final class Mapper {
         if (host.isNull()) {
             host.getCharChunk().append(defaultHostName);
         }
+
+        // host数据生成CharChunk数据
         host.toChars();
+
+        // uri数据生成CharChunk数据
         uri.toChars();
+
+        // 实际执行映射的位置，会将映射结果放入mappingData中
         internalMap(host.getCharChunk(), uri.getCharChunk(), version,
                 mappingData);
     }

@@ -528,6 +528,8 @@ public abstract class ContainerBase extends LifecycleMBeanBase
 
 
     /**
+     * 设置一个对人类来说可读的容器名称，用来描述当前容器，容器名称必须唯一
+     *
      * Set a name string (suitable for use by humans) that describes this
      * Container.  Within the set of child containers belonging to a particular
      * parent, Container names must be unique.
@@ -1201,8 +1203,9 @@ public abstract class ContainerBase extends LifecycleMBeanBase
     public void backgroundProcess() {
 
         // 如果容器状态非有效，直接返回不处理：STARTING、STARTED、STOPPING_PREP
-        if (!getState().isAvailable())
+        if (!getState().isAvailable()) {
             return;
+        }
 
         // 集群后台事务处理
         Cluster cluster = getClusterInternal();

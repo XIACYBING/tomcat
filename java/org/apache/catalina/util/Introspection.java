@@ -56,6 +56,8 @@ public class Introspection {
      * Determines if a method has a valid name and signature for a Java Bean
      * setter.
      *
+     * 是否有效的set方法：方法是set开头、set之后有其他字符、只有一个入参、无出参
+     *
      * @param method    The method to test
      *
      * @return  <code>true</code> if the method does have a valid name and
@@ -73,6 +75,8 @@ public class Introspection {
 
     /**
      * Determines if a method is a valid lifecycle callback method.
+     *
+     * 判断当前方法是否一个有效的生命周期回调方法，要求：无入参、无出参、非静态方法、方法未声明异常抛出
      *
      * @param method
      *            The method to test

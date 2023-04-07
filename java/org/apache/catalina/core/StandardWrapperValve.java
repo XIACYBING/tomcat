@@ -102,6 +102,7 @@ final class StandardWrapperValve
         Servlet servlet = null;
         Context context = (Context) wrapper.getParent();
 
+        // web应用对应的Context容器无效
         // Check for the application being marked unavailable
         if (!context.getState().isAvailable()) {
             response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE,

@@ -161,15 +161,22 @@ public final class MessageBytes implements Cloneable, Serializable {
      */
     @Override
     public String toString() {
+
+        // 如果已经有String的值，则直接返回
         if( hasStrValue ) {
             return strValue;
         }
 
+        // 如果hasStrValue为false，说明当前值是byte[]或char[]类型，需要转化成String
         switch (type) {
+
+            // CharChunk调用toString：底层是将char数组传入String，生成字符串
         case T_CHARS:
             strValue=charC.toString();
             hasStrValue=true;
             return strValue;
+
+            // ByteChunk转String
         case T_BYTES:
             strValue=byteC.toString();
             hasStrValue=true;
@@ -234,14 +241,24 @@ public final class MessageBytes implements Cloneable, Serializable {
      * Do a char-&gt;byte conversion.
      */
     public void toBytes() {
+
+        // byteC不为空，说明已经转化过，不处理
         if (!byteC.isNull()) {
             type=T_BYTES;
             return;
         }
+
+        // 调用toString方法：会根据当前的type字段，生成String数据，赋值给strValue
         toString();
+
+        // 修改类型
         type=T_BYTES;
+
+        // 调用String数据，根据Charset，生成ByteBuffer数据
         Charset charset = byteC.getCharset();
         ByteBuffer result = charset.encode(strValue);
+
+        // 赋值给byteC（ByteChunk）
         byteC.setBytes(result.array(), result.arrayOffset(), result.limit());
     }
 
@@ -250,14 +267,24 @@ public final class MessageBytes implements Cloneable, Serializable {
      * XXX Not optimized - it converts to String first.
      */
     public void toChars() {
+
+        // charC不为空，说明已经转化过，不处理
         if( ! charC.isNull() ) {
             type=T_CHARS;
             return;
         }
+
+        // 调用toString方法：会根据当前的type字段，生成String数据，赋值给strValue
         // inefficient
         toString();
+
+        // 修改类型
         type=T_CHARS;
+
+        // 调用String数据，生成char数组
         char cc[]=strValue.toCharArray();
+
+        // 设置char数组到charC（CharChunk）
         charC.setChars(cc, 0, cc.length);
     }
 
