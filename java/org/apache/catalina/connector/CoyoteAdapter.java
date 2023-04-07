@@ -529,6 +529,8 @@ public class CoyoteAdapter implements Adapter {
      * to enable the request/response pair to be passed to the start of the
      * container pipeline for processing.
      *
+     * 在Http请求头转化完成后，进行必要的处理（通过映射匹配各级容器）以便请求的继续
+     *
      * @param req      The coyote request object
      * @param request  The catalina request object
      * @param res      The coyote response object
@@ -759,6 +761,7 @@ public class CoyoteAdapter implements Adapter {
                 }
             }
 
+            // 如果已经匹配到了，但是对应的Context容器暂停了（可能热部署/热加载），这时候需要休眠一秒后重新匹配所有容器
             if (!mapRequired && request.getContext().getPaused()) {
                 // Found a matching context but it is paused. Mapping data will
                 // be wrong since some Wrappers may not be registered at this
@@ -768,8 +771,12 @@ public class CoyoteAdapter implements Adapter {
                 } catch (InterruptedException e) {
                     // Should never happen
                 }
+
+                // 回收匹配数据
                 // Reset mapping
                 request.getMappingData().recycle();
+
+                // 需要继续匹配
                 mapRequired = true;
             }
         }
