@@ -16,15 +16,6 @@
  */
 package org.apache.coyote;
 
-import java.io.IOException;
-import java.io.UnsupportedEncodingException;
-import java.nio.charset.Charset;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
-
-import javax.servlet.ReadListener;
-
 import org.apache.tomcat.util.buf.B2CConverter;
 import org.apache.tomcat.util.buf.ByteChunk;
 import org.apache.tomcat.util.buf.MessageBytes;
@@ -34,6 +25,14 @@ import org.apache.tomcat.util.http.Parameters;
 import org.apache.tomcat.util.http.ServerCookies;
 import org.apache.tomcat.util.net.ApplicationBufferHandler;
 import org.apache.tomcat.util.res.StringManager;
+
+import javax.servlet.ReadListener;
+import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.nio.charset.Charset;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * This is a low-level, efficient representation of a server request. Most
@@ -149,6 +148,10 @@ public final class Request {
     private final HashMap<String,Object> attributes = new HashMap<>();
 
     private Response response;
+
+    /**
+     * 当前hook是{@link AbstractProcessor}，这样可以让某些回调操作（异步的回调）通过processor线程来处理
+     */
     private volatile ActionHook hook;
 
     private long bytesRead=0;
@@ -426,6 +429,8 @@ public final class Request {
     }
 
     public void action(ActionCode actionCode, Object param) {
+
+        // 通过hook进行处理，具体的处理逻辑在：org.apache.coyote.AbstractProcessor.action
         if (hook != null) {
             if (param == null) {
                 hook.action(actionCode, this);
@@ -507,6 +512,8 @@ public final class Request {
     }
 
     public boolean isFinished() {
+
+        // 通过回调判断Request请求的Body是否全部被读取完成：底层通过org.apache.coyote.http11.Http11Processor.isRequestBodyFullyRead进行判断
         AtomicBoolean result = new AtomicBoolean(false);
         action(ActionCode.REQUEST_BODY_FULLY_READ, result);
         return result.get();
@@ -680,6 +687,8 @@ public final class Request {
 
     // -------------------- Info  --------------------
     public void updateCounters() {
+
+        // 统计请求数据
         reqProcessorMX.updateCounters();
     }
 

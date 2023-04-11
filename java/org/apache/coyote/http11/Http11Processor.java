@@ -816,6 +816,8 @@ public class Http11Processor extends AbstractProcessor {
                     // set the status to 500 and set the errorException.
                     // If we fail here, then the response is likely already
                     // committed, so we can't try and set headers.
+
+                    // todo 非异步无异常的情况下，进行关闭处理？
                     if(keepAlive && !getErrorState().isError() && !isAsync() &&
                             statusDropsConnection(response.getStatus())) {
                         setErrorState(ErrorState.CLOSE_CLEAN, null);
@@ -886,7 +888,10 @@ public class Http11Processor extends AbstractProcessor {
 
         if (getErrorState().isError() || endpoint.isPaused()) {
             return SocketState.CLOSED;
-        } else if (isAsync()) {
+        }
+
+        // 如果是异步请求，则返回LONG状态
+        else if (isAsync()) {
             return SocketState.LONG;
         } else if (isUpgrade()) {
             return SocketState.UPGRADING;
@@ -1427,10 +1432,19 @@ public class Http11Processor extends AbstractProcessor {
 
     @Override
     protected SocketState dispatchEndRequest() {
+
+        // 如果keepAlive为false，则直接返回CLOSED    todo 这是啥情况？异常？
         if (!keepAlive) {
             return SocketState.CLOSED;
-        } else {
+        }
+
+        // 正常来说执行当前链路
+        else {
+
+            // request结束的一些必要处理
             endRequest();
+
+            // inputBuffer和outputBuffer为下一个请求做准备
             inputBuffer.nextRequest();
             outputBuffer.nextRequest();
             if (socketWrapper.isReadPending()) {

@@ -49,7 +49,13 @@ public abstract class AbstractProcessorLight implements Processor {
                 state = dispatch(nextDispatch.getSocketStatus());
             } else if (status == SocketEvent.DISCONNECT) {
                 // Do nothing here, just wait for it to get recycled
-            } else if (isAsync() || isUpgrade() || state == SocketState.ASYNC_END) {
+            }
+
+            // 异步请求完成时，会到当前链路：isAsync()返回true
+            // 异步请求完全结束时，也会到当前链路：isAsync()返回false，state为ASYNC_END
+            else if (isAsync() || isUpgrade() || state == SocketState.ASYNC_END) {
+
+                // 异步请求完成时，调用当前方法，dispatch()会返回SocketState.LONG
                 state = dispatch(status);
                 if (state == SocketState.OPEN) {
                     // There may be pipe-lined data to read. If the data isn't
@@ -72,6 +78,8 @@ public abstract class AbstractProcessorLight implements Processor {
                 state = SocketState.CLOSED;
             }
 
+            // 异步请求完成的后置处理：1、发布异步请求完成事件；2、通过Context容器发布Request销毁事件；3、修改AsyncStateMachine的状态
+            // 异步请求完成，在当前链路将state由LONG更新为ASYNC_ENDED
             if (state != SocketState.CLOSED && isAsync()) {
                 state = asyncPostProcess();
             }
@@ -87,6 +95,8 @@ public abstract class AbstractProcessorLight implements Processor {
                 // dispatches to process.
                 dispatches = getIteratorAndClearDispatches();
             }
+
+            // 异步请求结束时，state更新为ASYNC_END，因此会再循环一次，以非异步请求的方式进行资源的回收
         } while (state == SocketState.ASYNC_END ||
                 dispatches != null && state != SocketState.CLOSED);
 

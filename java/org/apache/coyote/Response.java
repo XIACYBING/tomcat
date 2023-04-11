@@ -16,16 +16,6 @@
  */
 package org.apache.coyote;
 
-import java.io.IOException;
-import java.io.StringReader;
-import java.io.UnsupportedEncodingException;
-import java.nio.ByteBuffer;
-import java.nio.charset.Charset;
-import java.util.Locale;
-import java.util.concurrent.atomic.AtomicBoolean;
-
-import javax.servlet.WriteListener;
-
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.buf.B2CConverter;
@@ -34,6 +24,15 @@ import org.apache.tomcat.util.buf.MessageBytes;
 import org.apache.tomcat.util.http.MimeHeaders;
 import org.apache.tomcat.util.http.parser.MediaType;
 import org.apache.tomcat.util.res.StringManager;
+
+import javax.servlet.WriteListener;
+import java.io.IOException;
+import java.io.StringReader;
+import java.io.UnsupportedEncodingException;
+import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
+import java.util.Locale;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Response object.
@@ -538,6 +537,8 @@ public final class Response {
      */
     public void doWrite(ByteBuffer chunk) throws IOException {
         int len = chunk.remaining();
+
+        // 对HttpOutputBuffer写入chunk的字节数据，底层就是对Socket/Channel写入数据
         outputBuffer.doWrite(chunk);
         contentWritten += len - chunk.remaining();
     }

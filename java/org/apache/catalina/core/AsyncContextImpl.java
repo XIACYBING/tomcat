@@ -16,26 +16,6 @@
  */
 package org.apache.catalina.core;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
-
-import javax.naming.NamingException;
-import javax.servlet.AsyncContext;
-import javax.servlet.AsyncEvent;
-import javax.servlet.AsyncListener;
-import javax.servlet.RequestDispatcher;
-import javax.servlet.ServletContext;
-import javax.servlet.ServletException;
-import javax.servlet.ServletRequest;
-import javax.servlet.ServletResponse;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-
 import org.apache.catalina.AsyncDispatcher;
 import org.apache.catalina.Context;
 import org.apache.catalina.Globals;
@@ -51,6 +31,25 @@ import org.apache.tomcat.InstanceManager;
 import org.apache.tomcat.util.ExceptionUtils;
 import org.apache.tomcat.util.buf.UDecoder;
 import org.apache.tomcat.util.res.StringManager;
+
+import javax.naming.NamingException;
+import javax.servlet.AsyncContext;
+import javax.servlet.AsyncEvent;
+import javax.servlet.AsyncListener;
+import javax.servlet.RequestDispatcher;
+import javax.servlet.ServletContext;
+import javax.servlet.ServletException;
+import javax.servlet.ServletRequest;
+import javax.servlet.ServletResponse;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class AsyncContextImpl implements AsyncContext, AsyncContextCallback {
 
@@ -93,6 +92,9 @@ public class AsyncContextImpl implements AsyncContext, AsyncContextCallback {
             logDebug("complete   ");
         }
         check();
+
+        // 通过Hook进行异步完成的回调处理
+        // 会通过processor触发SocketEvent.OPEN_READ事件，向endpoint的线程池提交任务，对Channel中编写响应数据
         request.getCoyoteRequest().action(ActionCode.ASYNC_COMPLETE, null);
     }
 
@@ -101,8 +103,11 @@ public class AsyncContextImpl implements AsyncContext, AsyncContextCallback {
         List<AsyncListenerWrapper> listenersCopy = new ArrayList<>();
         listenersCopy.addAll(listeners);
 
+        // 将Context容器的WebappLoader绑定到线程上
         ClassLoader oldCL = context.bind(Globals.IS_SECURITY_ENABLED, null);
         try {
+
+            // 循环监听器，发布异步请求完成事件
             for (AsyncListenerWrapper listener : listenersCopy) {
                 try {
                     listener.fireOnComplete(event);
@@ -113,8 +118,14 @@ public class AsyncContextImpl implements AsyncContext, AsyncContextCallback {
                 }
             }
         } finally {
+
+            // 通过Context容器发布请求销毁事件
             context.fireRequestDestroyEvent(request.getRequest());
+
+            // 清除当前AsyncContext绑定的Request和Response
             clearServletRequestResponse();
+
+            // 将原ClassLoader绑定回线程上
             context.unbind(Globals.IS_SECURITY_ENABLED, oldCL);
         }
     }
@@ -311,15 +322,19 @@ public class AsyncContextImpl implements AsyncContext, AsyncContextCallback {
             ServletResponse response, boolean originalRequestResponse) {
 
         synchronized (asyncContextLock) {
+
+            // 调用Processor的Hook，进行AsyncStart的回调
             this.request.getCoyoteRequest().action(
                     ActionCode.ASYNC_START, this);
 
+            /// 赋值相关属性
             this.context = context;
             this.servletRequest = request;
             this.servletResponse = response;
             this.hasOriginalRequestAndResponse = originalRequestResponse;
             this.event = new AsyncEvent(this, request, response);
 
+            // 清除旧的监听器，并进行AsyncStart的通知  todo 从这个链路来看，启动时如果有监听器，应该是上一轮请求遗留下来的监听器，这里为什么要对他们进行通知，直接清除掉不就行了
             List<AsyncListenerWrapper> listenersCopy = new ArrayList<>();
             listenersCopy.addAll(listeners);
             listeners.clear();
@@ -376,6 +391,8 @@ public class AsyncContextImpl implements AsyncContext, AsyncContextCallback {
     public void setTimeout(long timeout) {
         check();
         this.timeout = timeout;
+
+        // 通过Processor进行超时属性设置的回调
         request.getCoyoteRequest().action(ActionCode.ASYNC_SETTIMEOUT,
                 Long.valueOf(timeout));
     }

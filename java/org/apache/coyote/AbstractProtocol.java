@@ -98,7 +98,9 @@ public abstract class AbstractProtocol<S> implements ProtocolHandler,
 
     private Handler<S> handler;
 
-
+    /**
+     * 需要进行等待的Processor：比如异步请求关联的Processor
+     */
     private final Set<Processor> waitingProcessors =
             Collections.newSetFromMap(new ConcurrentHashMap<Processor, Boolean>());
 
@@ -803,6 +805,8 @@ public abstract class AbstractProtocol<S> implements ProtocolHandler,
                         processor, socket));
             }
 
+            // 如果processor不为空，则从waitingProcessor集合中移除当前processor，避免超时事件的发布
+            // 如果是异步请求，在完成异步处理后，会通过endpoint重新触发当前链路进行处理，在此处需要先从waitingProcessor中移除自己的processor，避免请求完成了，超时事件反而被触发了
             if (processor != null) {
                 // Make sure an async timeout doesn't fire
                 getProtocol().removeWaitingProcessor(processor);
@@ -879,6 +883,9 @@ public abstract class AbstractProtocol<S> implements ProtocolHandler,
 
                     // 调用processor，处理套接字请求，通过Http请求走的是Http11Processor
                     // 调用链路为：AbstractProcessorLight.process -> Http11Processor.service
+
+                    // 异步请求完成时，调用AsyncContext.complete()时，会向endpoint提交任务，走到当前逻辑
+                    // 在process方法会循环处理SocketState，让其状态转变：SocketState.LONG -> SocketState.ASYNC_END -> SocketState.OPEN
                     state = processor.process(wrapper, status);
 
                     if (state == SocketState.UPGRADING) {
@@ -938,19 +945,35 @@ public abstract class AbstractProtocol<S> implements ProtocolHandler,
                     }
                 } while ( state == SocketState.UPGRADING);
 
+                // 异步请求的处理  todo 看使用，该状态有不少场景在用，还没有完全确认都是什么场景，但是AsyncServlet的链路会返回该状态
                 if (state == SocketState.LONG) {
+
+                    // 请求和响应正在处理中，socket和processor保持关联，提取long poll类型需要的依赖
+                    // todo 当前longPoll方法中，会判断非异步时到endpoint上注册OP_READ，等待下一次链接，不太清楚这是为什么
                     // In the middle of processing a request/response. Keep the
                     // socket associated with the processor. Exact requirements
                     // depend on type of long poll
                     longPoll(wrapper, processor);
+
+                    // 异步请求时，将对应的processor添加到AbstractProtocol.waitingProcessors上
+                    // 在异步请求完成后，会通过endpoint提交任务，重新触发当前方法，并在上面的逻辑中调用removeWaitingProcessor，移除等待
                     if (processor.isAsync()) {
                         getProtocol().addWaitingProcessor(processor);
                     }
-                } else if (state == SocketState.OPEN) {
+                }
+
+                // 请求结束（异步和同步请求都应该走当前链路），进行资源回收
+                else if (state == SocketState.OPEN) {
                     // In keep-alive but between requests. OK to recycle
                     // processor. Continue to poll for the next request.
+
+                    // 从集合中移除socket和processor的关联关系
                     connections.remove(socket);
+
+                    // 释放processor：回收processor中的资源，将processor加入recycledProcessors，等待下一次的使用
                     release(processor);
+
+                    // 将当前socket向endpoint上注册OP_READ，等待下一次的链接
                     wrapper.registerReadInterest();
                 } else if (state == SocketState.SENDFILE) {
                     // Sendfile in progress. If it fails, the socket will be
@@ -1221,16 +1244,21 @@ public abstract class AbstractProtocol<S> implements ProtocolHandler,
 
             // Loop until we receive a shutdown command
             while (asyncTimeoutRunning) {
+
+                // 每秒检查一次
                 try {
                     Thread.sleep(1000);
                 } catch (InterruptedException e) {
                     // Ignore
                 }
                 long now = System.currentTimeMillis();
+
+                // 循环当前需要等待的processor，发送当前毫秒时间，如果异步耗时超出Processor配置的超时时间，则进行超时处理
                 for (Processor processor : waitingProcessors) {
                    processor.timeoutAsync(now);
                 }
 
+                // endPoint如果暂停，则休眠1秒，然后继续处理
                 // Loop if endpoint is paused
                 while (endpoint.isPaused() && asyncTimeoutRunning) {
                     try {

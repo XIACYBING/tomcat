@@ -153,23 +153,44 @@ public class RequestInfo  {
     private long lastRequestProcessingTime = 0;
 
 
-    /** Called by the processor before recycling the request. It'll collect
+    /**
+     * 回收request前调用当前方法，收集统计信息
+     *
+     * Called by the processor before recycling the request. It'll collect
      * statistic information.
      */
     void updateCounters() {
+
+        // 接收字节数统计
         bytesReceived+=req.getBytesRead();
+
+        // 发送字节数统计
         bytesSent+=req.getResponse().getContentWritten();
 
+        // 请求数自增
         requestCount++;
-        if( req.getResponse().getStatus() >=400 )
+
+        // 如果异常，则异常数自增
+        if( req.getResponse().getStatus() >=400 ) {
             errorCount++;
+        }
+
+        // 当前请求耗时计算
         long t0=req.getStartTime();
         long t1=System.currentTimeMillis();
         long time=t1-t0;
         this.lastRequestProcessingTime = time;
+
+        // 请求总耗时统计
         processingTime+=time;
+
+        // 最大请求耗时计算：如果当前请求的耗时比之前的最大请求耗时要大
         if( maxTime < time ) {
+
+            // 设置当前请求耗时为最大请求耗时
             maxTime=time;
+
+            // 设置当前请求URI为最大耗时请求URI
             maxRequestUri=req.requestURI().toString();
         }
     }

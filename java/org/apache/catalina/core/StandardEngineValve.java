@@ -69,7 +69,7 @@ final class StandardEngineValve extends ValveBase {
     public final void invoke(Request request, Response response)
         throws IOException, ServletException {
 
-        // 获取当前请求的Host
+        // 获取当前请求的Host，当前请求对应的Host在CoyoteAdapter中应该通过Mapper查找到了
         // Select the Host to be used for this Request
         Host host = request.getHost();
         if (host == null) {

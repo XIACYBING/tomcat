@@ -16,6 +16,15 @@
  */
 package org.apache.catalina.connector;
 
+import org.apache.catalina.Globals;
+import org.apache.coyote.ActionCode;
+import org.apache.coyote.Response;
+import org.apache.tomcat.util.buf.B2CConverter;
+import org.apache.tomcat.util.buf.C2BConverter;
+import org.apache.tomcat.util.res.StringManager;
+
+import javax.servlet.WriteListener;
+import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.Writer;
 import java.nio.Buffer;
@@ -27,16 +36,6 @@ import java.security.PrivilegedActionException;
 import java.security.PrivilegedExceptionAction;
 import java.util.HashMap;
 import java.util.Map;
-
-import javax.servlet.WriteListener;
-import javax.servlet.http.HttpServletResponse;
-
-import org.apache.catalina.Globals;
-import org.apache.coyote.ActionCode;
-import org.apache.coyote.Response;
-import org.apache.tomcat.util.buf.B2CConverter;
-import org.apache.tomcat.util.buf.C2BConverter;
-import org.apache.tomcat.util.res.StringManager;
 
 /**
  * The buffer used by Tomcat response. This is a derivative of the Tomcat 3.3
@@ -348,6 +347,9 @@ public class OutputBuffer extends Writer {
         if (buf.remaining() > 0) {
             // real write to the adapter
             try {
+
+                // 通过response写入返回数据：coyoteResponse.doWrite -> Http11OutputBuffer.doWrite -> Http11OutputBuffer.SocketOutputBuffer.doWrite
+                // 通过链路可以看出，最终是向Socket/Channel去写入数据，返回给客户端
                 coyoteResponse.doWrite(buf);
             } catch (IOException e) {
                 // An IOException on a write is almost always due to
@@ -440,19 +442,34 @@ public class OutputBuffer extends Writer {
     /**
      * Convert the chars to bytes, then send the data to the client.
      *
+     * 将字符转换为字节，并发送数据给客户端
+     *
      * @param from Char buffer to be written to the response
      *
      * @throws IOException An underlying IOException occurred
      */
     public void realWriteChars(CharBuffer from) throws IOException {
 
+        // 如果还有字符缓存数据，则继续循环
         while (from.remaining() > 0) {
+
+            // 转换传入的字符数据为字节数据
             conv.convert(from, bb);
+
+            // 如果转换后的字节数据为0，说明from字节缓存区中没有剩余的数据需要传输，循环中断
             if (bb.remaining() == 0) {
                 // Break out of the loop if more chars are needed to produce any output
                 break;
             }
+
+            // 如果字符数据大于0，说明from中还有数据无法被填充到bb缓存区中，而bb缓存区已经被填充了足够多的数据，可以调用flushByteBuffer刷新bb的数据到Socket/Channel中
+            // 如果字符数据小于等于0，说明bb可能还没有被填充足够多的数据，这时不调用flushByteBuffer刷新字节数据到Socket/Channel中，只是将数据先缓存在bb缓存区中，等待下一次操作将bb
+            // 缓存区填满，或达到一定的时间后（或流关闭时调用flush方法），才会调用flushByteBuffer将bb缓存区中的数据刷新到Socket/Channel中
+
+            // 这个策略可以有效减少网络传输次数，提高性能
             if (from.remaining() > 0) {
+
+                // 刷新字节数据到客户端
                 flushByteBuffer();
             }
         }
@@ -812,7 +829,11 @@ public class OutputBuffer extends Writer {
     }
 
     private void flushByteBuffer() throws IOException {
+
+        // 刷新字节数据：将数据传输到客户端
         realWriteBytes(bb.slice());
+
+        // 清空已刷新数据
         clear(bb);
     }
 

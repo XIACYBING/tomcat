@@ -22,6 +22,7 @@ import org.apache.catalina.Host;
 import org.apache.catalina.Wrapper;
 import org.apache.catalina.authenticator.AuthenticatorBase;
 import org.apache.catalina.core.AsyncContextImpl;
+import org.apache.catalina.core.ContainerBase;
 import org.apache.catalina.util.ServerInfo;
 import org.apache.catalina.util.SessionConfig;
 import org.apache.catalina.util.URLEncoder;
@@ -56,6 +57,14 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Implementation of a request processor which delegates the processing to a
  * Coyote processor.
+ *
+ * 对{@link Adapter}的实现，主要是将Tomcat的{@link org.apache.coyote.Request}转换为标准的ServletRequest
+ * {@link javax.servlet.ServletRequest}（在当前类中，使用的是{@link javax.servlet.ServletRequest}的子类
+ * {@link org.apache.catalina.connector.Request}）；
+ *
+ * 并通过{@link #connector}获取{@link org.apache.catalina.Engine}容器对应的{@link ContainerBase#getPipeline()}，开始进行
+ * {@link org.apache.catalina.Valve}相关的处理，在最终节点{@link org.apache.catalina.core.StandardWrapperValve}组装FilterChain
+ * {@link org.apache.catalina.core.ApplicationFilterChain}，并在其中完成{@link javax.servlet.Servlet#service}的处理
  *
  * @author Craig R. McClanahan
  * @author Remy Maucherat
@@ -221,6 +230,7 @@ public class CoyoteAdapter implements Adapter {
                 }
             }
 
+            // 异步处理
             // Has an error occurred during async processing that needs to be
             // processed by the application's error page mechanism (or Tomcat's
             // if the application doesn't define one)?
@@ -230,6 +240,7 @@ public class CoyoteAdapter implements Adapter {
                         request, response);
             }
 
+            // 同步处理
             if (request.isAsyncDispatching()) {
                 connector.getService().getContainer().getPipeline().getFirst().invoke(
                         request, response);
@@ -239,6 +250,7 @@ public class CoyoteAdapter implements Adapter {
                 }
             }
 
+            // 如果不是异步请求，则直接完成请求和响应：实际上就是关闭请求流和响应流
             if (!request.isAsync()) {
                 request.finishRequest();
                 response.finishResponse();
@@ -246,6 +258,7 @@ public class CoyoteAdapter implements Adapter {
 
             // Check to see if the processor is in an error state. If it is,
             // bail out now.
+            // 如果当前处于错误的状态，则此处直接设置success为false，结束请求
             AtomicBoolean error = new AtomicBoolean(false);
             res.action(ActionCode.IS_ERROR, error);
             if (error.get()) {
@@ -265,10 +278,13 @@ public class CoyoteAdapter implements Adapter {
             success = false;
             log.error(sm.getString("coyoteAdapter.asyncDispatch"), t);
         } finally {
+
+            // 发生了错误，设置response状态码为500
             if (!success) {
                 res.setStatus(500);
             }
 
+            // 发生了错误，或者非异步请求，则此处可以计算请求耗时和日志记录了
             // Access logging
             if (!success || !request.isAsync()) {
                 long time = 0;
@@ -284,6 +300,8 @@ public class CoyoteAdapter implements Adapter {
             }
 
             req.getRequestProcessor().setWorkerThreadName(null);
+
+            // 如果发生了错误，或者非异步请求，则request和response可以进行回收操作了
             // Recycle the wrapper request and response
             if (!success || !request.isAsync()) {
                 request.recycle();
@@ -340,6 +358,7 @@ public class CoyoteAdapter implements Adapter {
                         connector.getService().getContainer().getPipeline().isAsyncSupported());
 
                 // 开始进行处理，在此处进行对应的Servlet调用
+                // 此处的getContainer获取到的是StandardEngine，
                 // Calling the container
                 connector.getService().getContainer().getPipeline().getFirst().invoke(
                         request, response);
@@ -347,16 +366,25 @@ public class CoyoteAdapter implements Adapter {
             if (request.isAsync()) {
                 async = true;
                 ReadListener readListener = req.getReadListener();
+
+                // 如果数据读取监听器不为空，且请求中的body数据已经完全被读取出去了
                 if (readListener != null && request.isFinished()) {
                     // Possible the all data may have been read during service()
                     // method so this needs to be checked here
                     ClassLoader oldCL = null;
                     try {
+
+                        // 将request中绑定的Context容器上的WebappClassLoader绑定到线程上
+                        // todo 从这个操作来看，可能是onAllDataRead方法中有需要类加载的地方？
                         oldCL = request.getContext().bind(false, null);
+
+                        // 发布所有数据被读取事件：Tomcat中暂时没有实现类...
                         if (req.sendAllDataReadEvent()) {
                             req.getReadListener().onAllDataRead();
                         }
                     } finally {
+
+                        // 重置线程上绑定的ClassLoader
                         request.getContext().unbind(false, oldCL);
                     }
                 }
@@ -367,11 +395,18 @@ public class CoyoteAdapter implements Adapter {
                 // If an async request was started, is not going to end once
                 // this container thread finishes and an error occurred, trigger
                 // the async error process
+
+                // 如果有异常，通过AsyncContext设置异常状态
                 if (!request.isAsyncCompleting() && throwable != null) {
                     request.getAsyncContextInternal().setErrorState(throwable, true);
                 }
-            } else {
+            }
+
+            // 非异步请求，此处可以直接完成request和response：实际上就是关闭请求流和响应流
+            else {
                 request.finishRequest();
+
+                // finishResponse会将响应数据返回给浏览器，对浏览器来说就已经完成了当前请求了
                 response.finishResponse();
             }
 
@@ -389,6 +424,7 @@ public class CoyoteAdapter implements Adapter {
                 async = false;
             }
 
+            // 非异步且请求解析的后置处理成功，则可以开始记录日志
             // Access log
             if (!async && postParseSuccess) {
                 // Log only if processing was invoked.
@@ -405,6 +441,7 @@ public class CoyoteAdapter implements Adapter {
                 }
             }
 
+            // 请求结束，设置请求信息中的工作线程名为空
             req.getRequestProcessor().setWorkerThreadName(null);
 
             // Recycle the wrapper request and response

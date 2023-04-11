@@ -16,15 +16,6 @@
  */
 package org.apache.coyote;
 
-import java.io.IOException;
-import java.io.InterruptedIOException;
-import java.nio.ByteBuffer;
-import java.util.Iterator;
-import java.util.concurrent.Executor;
-import java.util.concurrent.atomic.AtomicBoolean;
-
-import javax.servlet.RequestDispatcher;
-
 import org.apache.tomcat.util.ExceptionUtils;
 import org.apache.tomcat.util.buf.ByteChunk;
 import org.apache.tomcat.util.net.AbstractEndpoint;
@@ -34,6 +25,14 @@ import org.apache.tomcat.util.net.SSLSupport;
 import org.apache.tomcat.util.net.SocketEvent;
 import org.apache.tomcat.util.net.SocketWrapperBase;
 import org.apache.tomcat.util.res.StringManager;
+
+import javax.servlet.RequestDispatcher;
+import java.io.IOException;
+import java.io.InterruptedIOException;
+import java.nio.ByteBuffer;
+import java.util.Iterator;
+import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Provides functionality and attributes common to all supported protocols
@@ -67,11 +66,17 @@ public abstract class AbstractProcessor extends AbstractProcessorLight implement
     protected AbstractProcessor(AbstractEndpoint<?> endpoint, Request coyoteRequest,
             Response coyoteResponse) {
         this.endpoint = endpoint;
+
+        // 新建异步状态机，异步回调时通过该状态机和Processor进行回调
         asyncStateMachine = new AsyncStateMachine(this);
         request = coyoteRequest;
         response = coyoteResponse;
+
+        // 设置Response回调钩子
         response.setHook(this);
         request.setResponse(response);
+
+        // 设置Request回调钩子
         request.setHook(this);
     }
 
@@ -176,6 +181,8 @@ public abstract class AbstractProcessor extends AbstractProcessorLight implement
 
     @Override
     public SocketState asyncPostProcess() {
+
+        // 异步请求结束时的处理
         return asyncStateMachine.asyncPostProcess();
     }
 
@@ -238,10 +245,20 @@ public abstract class AbstractProcessor extends AbstractProcessorLight implement
         if (getErrorState().isError()) {
             request.updateCounters();
             return SocketState.CLOSED;
-        } else if (isAsync()) {
+        }
+
+        // 异步请求时，对完返回SocketState.LONG
+        else if (isAsync()) {
             return SocketState.LONG;
-        } else {
+        }
+
+        // 异步请求结束时，会到当前链路
+        else {
+
+            // 统计请求数据：更新接收发送字节数、自增请求&错误请求数、计算（最大）请求耗时
             request.updateCounters();
+
+            // 将请求和响应相关资源做回收，为下一次请求做准备
             return dispatchEndRequest();
         }
     }
@@ -371,11 +388,15 @@ public abstract class AbstractProcessor extends AbstractProcessorLight implement
             break;
         }
 
+        // 在调用javax.servlet.ServletRequest.startAsync()时会进行该回调
+        // param是AsyncContextImpl实例，此处是将AsyncContext绑定到asyncStateMachine上，方便后面的异步线程回调时进行相关通知
         // Servlet 3.0 asynchronous support
         case ASYNC_START: {
             asyncStateMachine.asyncStart((AsyncContextCallback) param);
             break;
         }
+
+        // 异步执行结束，通过调用AsyncContext.complete()来触发
         case ASYNC_COMPLETE: {
             clearDispatches();
             if (asyncStateMachine.asyncComplete()) {
@@ -401,6 +422,8 @@ public abstract class AbstractProcessor extends AbstractProcessorLight implement
             ((AtomicBoolean) param).set(asyncStateMachine.isAsync());
             break;
         }
+
+        // 获取异步请求是否完成：true/已完成
         case ASYNC_IS_COMPLETING: {
             ((AtomicBoolean) param).set(asyncStateMachine.isCompleting());
             break;
@@ -421,6 +444,8 @@ public abstract class AbstractProcessor extends AbstractProcessorLight implement
             ((AtomicBoolean) param).set(asyncStateMachine.isAsyncTimingOut());
             break;
         }
+
+        // 提交AsyncServlet中的异步内容，最终通过processor的executor来处理
         case ASYNC_RUN: {
             asyncStateMachine.asyncRun((Runnable) param);
             break;
@@ -489,6 +514,9 @@ public abstract class AbstractProcessor extends AbstractProcessorLight implement
             doPush((Request) param);
             break;
         }
+
+        // 增加一个default，抑制警告
+            default:
         }
     }
 
@@ -507,8 +535,14 @@ public abstract class AbstractProcessor extends AbstractProcessorLight implement
         if (now < 0) {
             doTimeoutAsync();
         } else {
+
+            // 获取超时毫秒数
             long asyncTimeout = getAsyncTimeout();
+
+            // 大于0说明有有效配置
             if (asyncTimeout > 0) {
+
+                // 计算异步的耗时，如果超出超时毫秒数，则执行超时处理
                 long asyncStart = asyncStateMachine.getLastAsyncStart();
                 if ((now - asyncStart) > asyncTimeout) {
                     doTimeoutAsync();
@@ -519,8 +553,12 @@ public abstract class AbstractProcessor extends AbstractProcessorLight implement
 
 
     private void doTimeoutAsync() {
+
+        // 避免多次超时操作
         // Avoid multiple timeouts
         setAsyncTimeout(-1);
+
+        // 处理超时Socket事件
         processSocketEvent(SocketEvent.TIMEOUT, true);
     }
 
@@ -636,6 +674,8 @@ public abstract class AbstractProcessor extends AbstractProcessorLight implement
 
 
     protected void processSocketEvent(SocketEvent event, boolean dispatch) {
+
+        // 获取当前包装的SocketWrapperBase
         SocketWrapperBase<?> socketWrapper = getSocketWrapper();
         if (socketWrapper != null) {
             socketWrapper.processSocket(event, dispatch);
@@ -778,6 +818,8 @@ public abstract class AbstractProcessor extends AbstractProcessorLight implement
     /**
      * Perform any necessary clean-up processing if the dispatch resulted in the
      * completion of processing for the current request.
+     *
+     * 当当前请求的处理完成时，执行必须的清理处理
      *
      * @return The state to return for the socket once the clean-up for the
      *         current request has completed

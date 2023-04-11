@@ -1664,6 +1664,8 @@ public class Request implements org.apache.catalina.servlet4preview.http.HttpSer
     @Override
     public AsyncContext startAsync(ServletRequest request,
             ServletResponse response) {
+
+        // 是否支持异步的状态检查
         if (!isAsyncSupported()) {
             IllegalStateException ise =
                     new IllegalStateException(sm.getString("request.asyncNotSupported"));
@@ -1672,12 +1674,16 @@ public class Request implements org.apache.catalina.servlet4preview.http.HttpSer
             throw ise;
         }
 
+        // 如果当前Request实体没有绑定一个AsyncContext，则实例化一个
         if (asyncContext == null) {
             asyncContext = new AsyncContextImpl(this);
         }
 
+        // 设置异步上下文信息，通过processor进行asyncStart回调，发布asyncStart事件给旧监听器
         asyncContext.setStarted(getContext(), request, response,
                 request==getRequest() && response==getResponse().getResponse());
+
+        // 设置超时属性
         asyncContext.setTimeout(getConnector().getAsyncTimeout());
 
         return asyncContext;
@@ -1732,6 +1738,7 @@ public class Request implements org.apache.catalina.servlet4preview.http.HttpSer
             return false;
         }
 
+        // 通过Processor回调，判断异步请求是否完成，其实就是通过Processor关联的状态机asyncStateMachine获取结果
         AtomicBoolean result = new AtomicBoolean(false);
         coyoteRequest.action(ActionCode.ASYNC_IS_COMPLETING, result);
         return result.get();

@@ -16,13 +16,13 @@
  */
 package org.apache.coyote;
 
-import java.security.AccessController;
-import java.security.PrivilegedAction;
-
 import org.apache.tomcat.util.net.AbstractEndpoint.Handler.SocketState;
 import org.apache.tomcat.util.res.StringManager;
 import org.apache.tomcat.util.security.PrivilegedGetTccl;
 import org.apache.tomcat.util.security.PrivilegedSetTccl;
+
+import java.security.AccessController;
+import java.security.PrivilegedAction;
 
 /**
  * Manages the state transitions for async requests.
@@ -271,9 +271,18 @@ public class AsyncStateMachine {
         } else  if (state == AsyncState.STARTING || state == AsyncState.READ_WRITE_OP) {
             state = AsyncState.STARTED;
             return SocketState.LONG;
-        } else if (state == AsyncState.MUST_COMPLETE || state == AsyncState.COMPLETING) {
+        }
+
+        // 异步请求完成时，触发当前条件
+        else if (state == AsyncState.MUST_COMPLETE || state == AsyncState.COMPLETING) {
+
+            // 发布异步请求完成事件给相关的监听器
             asyncCtxt.fireOnComplete();
+
+            // 异步请求已经完成，当前state修改回默认的DISPATCHED
             state = AsyncState.DISPATCHED;
+
+            // 返回ASYNC_END状态，代表异步请求已经结束
             return SocketState.ASYNC_END;
         } else if (state == AsyncState.MUST_DISPATCH) {
             state = AsyncState.DISPATCHING;
@@ -427,10 +436,14 @@ public class AsyncStateMachine {
     }
 
     public synchronized void asyncRun(Runnable runnable) {
+
+        // 状态正常时才处理
         if (state == AsyncState.STARTING || state ==  AsyncState.STARTED ||
                 state == AsyncState.READ_WRITE_OP) {
             // Execute the runnable using a container thread from the
             // Connector's thread pool. Use a wrapper to prevent a memory leak
+
+            // ClassLoader的替换
             ClassLoader oldCL;
             if (Constants.IS_SECURITY_ENABLED) {
                 PrivilegedAction<ClassLoader> pa = new PrivilegedGetTccl();
@@ -448,8 +461,11 @@ public class AsyncStateMachine {
                             this.getClass().getClassLoader());
                 }
 
+                // 提交AsyncServlet的Runnable任务到processor的executor
                 processor.getExecutor().execute(runnable);
             } finally {
+
+                // 重置ClassLoader
                 if (Constants.IS_SECURITY_ENABLED) {
                     PrivilegedAction<Void> pa = new PrivilegedSetTccl(
                             oldCL);

@@ -232,6 +232,8 @@ public class Http11OutputBuffer implements OutputBuffer {
         }
 
         if (lastActiveFilter == -1) {
+
+            // 通过Http11OutputBuffer.SocketOutputBuffer.doWrite向Channel写入数据，对客户端返回数据
             return outputStreamOutputBuffer.doWrite(chunk);
         } else {
             return activeFilters[lastActiveFilter].doWrite(chunk);
@@ -643,6 +645,8 @@ public class Http11OutputBuffer implements OutputBuffer {
         public int doWrite(ByteBuffer chunk) throws IOException {
             try {
                 int len = chunk.remaining();
+
+                // 根据传入的字节缓存数据，对Socket（实际上就是Channel）写入数据，即：向客户端返回数据
                 socketWrapper.write(isBlocking(), chunk);
                 len -= chunk.remaining();
                 byteCount += len;

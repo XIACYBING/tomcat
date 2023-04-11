@@ -16,14 +16,6 @@
  */
 package org.apache.catalina.core;
 
-import java.io.IOException;
-
-import javax.servlet.DispatcherType;
-import javax.servlet.RequestDispatcher;
-import javax.servlet.ServletContext;
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServletResponse;
-
 import org.apache.catalina.Context;
 import org.apache.catalina.Globals;
 import org.apache.catalina.Wrapper;
@@ -36,6 +28,13 @@ import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.ExceptionUtils;
 import org.apache.tomcat.util.descriptor.web.ErrorPage;
 import org.apache.tomcat.util.res.StringManager;
+
+import javax.servlet.DispatcherType;
+import javax.servlet.RequestDispatcher;
+import javax.servlet.ServletContext;
+import javax.servlet.ServletException;
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
 
 /**
  * Valve that implements the default basic behavior for the
@@ -106,6 +105,7 @@ final class StandardHostValve extends ValveBase {
         throws IOException, ServletException {
 
         // Select the Context to be used for this Request
+        // 获取要处理当前请求的Context容器，并进行状态判断
         Context context = request.getContext();
         if (context == null) {
             response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR,

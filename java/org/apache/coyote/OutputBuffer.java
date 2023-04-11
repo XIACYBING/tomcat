@@ -48,6 +48,7 @@ public interface OutputBuffer {
     public int doWrite(ByteChunk chunk) throws IOException;
 
 
+
     /**
      * Write the given data to the response. The caller owns the chunks.
      *
@@ -59,7 +60,6 @@ public interface OutputBuffer {
      * @throws IOException an underlying I/O error occurred
      */
     public int doWrite(ByteBuffer chunk) throws IOException;
-
 
     /**
      * Bytes written to the underlying socket. This includes the effects of

@@ -16,6 +16,31 @@
  */
 package org.apache.catalina.connector;
 
+import org.apache.catalina.Context;
+import org.apache.catalina.Globals;
+import org.apache.catalina.Session;
+import org.apache.catalina.Wrapper;
+import org.apache.catalina.security.SecurityUtil;
+import org.apache.catalina.util.RequestUtil;
+import org.apache.catalina.util.SessionConfig;
+import org.apache.coyote.ActionCode;
+import org.apache.juli.logging.Log;
+import org.apache.juli.logging.LogFactory;
+import org.apache.tomcat.util.buf.CharChunk;
+import org.apache.tomcat.util.buf.UEncoder;
+import org.apache.tomcat.util.buf.UEncoder.SafeCharsSet;
+import org.apache.tomcat.util.buf.UriUtil;
+import org.apache.tomcat.util.http.FastHttpDateFormat;
+import org.apache.tomcat.util.http.MimeHeaders;
+import org.apache.tomcat.util.http.parser.MediaTypeCache;
+import org.apache.tomcat.util.res.StringManager;
+
+import javax.servlet.ServletOutputStream;
+import javax.servlet.ServletResponse;
+import javax.servlet.SessionTrackingMode;
+import javax.servlet.http.Cookie;
+import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpServletResponseWrapper;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.MalformedURLException;
@@ -35,32 +60,6 @@ import java.util.Locale;
 import java.util.TimeZone;
 import java.util.Vector;
 import java.util.concurrent.atomic.AtomicInteger;
-
-import javax.servlet.ServletOutputStream;
-import javax.servlet.ServletResponse;
-import javax.servlet.SessionTrackingMode;
-import javax.servlet.http.Cookie;
-import javax.servlet.http.HttpServletResponse;
-import javax.servlet.http.HttpServletResponseWrapper;
-
-import org.apache.catalina.Context;
-import org.apache.catalina.Globals;
-import org.apache.catalina.Session;
-import org.apache.catalina.Wrapper;
-import org.apache.catalina.security.SecurityUtil;
-import org.apache.catalina.util.RequestUtil;
-import org.apache.catalina.util.SessionConfig;
-import org.apache.coyote.ActionCode;
-import org.apache.juli.logging.Log;
-import org.apache.juli.logging.LogFactory;
-import org.apache.tomcat.util.buf.CharChunk;
-import org.apache.tomcat.util.buf.UEncoder;
-import org.apache.tomcat.util.buf.UEncoder.SafeCharsSet;
-import org.apache.tomcat.util.buf.UriUtil;
-import org.apache.tomcat.util.http.FastHttpDateFormat;
-import org.apache.tomcat.util.http.MimeHeaders;
-import org.apache.tomcat.util.http.parser.MediaTypeCache;
-import org.apache.tomcat.util.res.StringManager;
 
 /**
  * Wrapper object for the Coyote response.
@@ -480,6 +479,8 @@ public class Response implements HttpServletResponse {
      * @exception IOException if an input/output error occurs
      */
     public void finishResponse() throws IOException {
+
+        // 将剩余的字节回写给浏览器
         // Writing leftover bytes
         outputBuffer.close();
     }

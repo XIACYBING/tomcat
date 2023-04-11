@@ -16,71 +16,6 @@
  */
 package org.apache.catalina.core;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.net.MalformedURLException;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Enumeration;
-import java.util.EventListener;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Set;
-import java.util.Stack;
-import java.util.TreeMap;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
-
-import javax.management.ListenerNotFoundException;
-import javax.management.MBeanNotificationInfo;
-import javax.management.Notification;
-import javax.management.NotificationBroadcasterSupport;
-import javax.management.NotificationEmitter;
-import javax.management.NotificationFilter;
-import javax.management.NotificationListener;
-import javax.naming.NamingException;
-import javax.servlet.Filter;
-import javax.servlet.FilterConfig;
-import javax.servlet.FilterRegistration;
-import javax.servlet.RequestDispatcher;
-import javax.servlet.Servlet;
-import javax.servlet.ServletContainerInitializer;
-import javax.servlet.ServletContext;
-import javax.servlet.ServletContextAttributeListener;
-import javax.servlet.ServletContextEvent;
-import javax.servlet.ServletContextListener;
-import javax.servlet.ServletException;
-import javax.servlet.ServletRegistration;
-import javax.servlet.ServletRegistration.Dynamic;
-import javax.servlet.ServletRequest;
-import javax.servlet.ServletRequestAttributeListener;
-import javax.servlet.ServletRequestEvent;
-import javax.servlet.ServletRequestListener;
-import javax.servlet.ServletSecurityElement;
-import javax.servlet.SessionCookieConfig;
-import javax.servlet.SessionTrackingMode;
-import javax.servlet.descriptor.JspConfigDescriptor;
-import javax.servlet.http.HttpSessionAttributeListener;
-import javax.servlet.http.HttpSessionIdListener;
-import javax.servlet.http.HttpSessionListener;
-
 import org.apache.catalina.Authenticator;
 import org.apache.catalina.Container;
 import org.apache.catalina.ContainerListener;
@@ -135,6 +70,70 @@ import org.apache.tomcat.util.http.Rfc6265CookieProcessor;
 import org.apache.tomcat.util.scan.StandardJarScanner;
 import org.apache.tomcat.util.security.PrivilegedGetTccl;
 import org.apache.tomcat.util.security.PrivilegedSetTccl;
+
+import javax.management.ListenerNotFoundException;
+import javax.management.MBeanNotificationInfo;
+import javax.management.Notification;
+import javax.management.NotificationBroadcasterSupport;
+import javax.management.NotificationEmitter;
+import javax.management.NotificationFilter;
+import javax.management.NotificationListener;
+import javax.naming.NamingException;
+import javax.servlet.Filter;
+import javax.servlet.FilterConfig;
+import javax.servlet.FilterRegistration;
+import javax.servlet.RequestDispatcher;
+import javax.servlet.Servlet;
+import javax.servlet.ServletContainerInitializer;
+import javax.servlet.ServletContext;
+import javax.servlet.ServletContextAttributeListener;
+import javax.servlet.ServletContextEvent;
+import javax.servlet.ServletContextListener;
+import javax.servlet.ServletException;
+import javax.servlet.ServletRegistration;
+import javax.servlet.ServletRegistration.Dynamic;
+import javax.servlet.ServletRequest;
+import javax.servlet.ServletRequestAttributeListener;
+import javax.servlet.ServletRequestEvent;
+import javax.servlet.ServletRequestListener;
+import javax.servlet.ServletSecurityElement;
+import javax.servlet.SessionCookieConfig;
+import javax.servlet.SessionTrackingMode;
+import javax.servlet.descriptor.JspConfigDescriptor;
+import javax.servlet.http.HttpSessionAttributeListener;
+import javax.servlet.http.HttpSessionIdListener;
+import javax.servlet.http.HttpSessionListener;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Enumeration;
+import java.util.EventListener;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
+import java.util.Stack;
+import java.util.TreeMap;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * Standard implementation of the <b>Context</b> interface.  Each
@@ -6077,22 +6076,31 @@ public class StandardContext extends ContainerBase
 
     @Override
     public boolean fireRequestDestroyEvent(ServletRequest request) {
+
+        // 获取应用事件监听器
         Object instances[] = getApplicationEventListeners();
 
         if ((instances != null) && (instances.length > 0)) {
 
+            // 构建Servlet请求事件
             ServletRequestEvent event =
                 new ServletRequestEvent(getServletContext(), request);
 
+            // 循环监听器实例
             for (int i = 0; i < instances.length; i++) {
                 int j = (instances.length -1) -i;
-                if (instances[j] == null)
+                if (instances[j] == null) {
                     continue;
-                if (!(instances[j] instanceof ServletRequestListener))
+                }
+
+                // 非ServletRequestListener的监听器不处理
+                if (!(instances[j] instanceof ServletRequestListener)) {
                     continue;
+                }
                 ServletRequestListener listener =
                     (ServletRequestListener) instances[j];
 
+                // 发布request销毁事件
                 try {
                     listener.requestDestroyed(event);
                 } catch (Throwable t) {
@@ -6101,10 +6109,14 @@ public class StandardContext extends ContainerBase
                             "standardContext.requestListener.requestInit",
                             instances[j].getClass().getName()), t);
                     request.setAttribute(RequestDispatcher.ERROR_EXCEPTION, t);
+
+                    // 异常时直接返回false，不触发剩余的监听器
                     return false;
                 }
             }
         }
+
+        // 所有监听器都正常的消费了事件，返回true
         return true;
     }
 

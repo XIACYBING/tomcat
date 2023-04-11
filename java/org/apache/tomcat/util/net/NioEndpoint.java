@@ -1558,7 +1558,10 @@ public class NioEndpoint extends AbstractJsseEndpoint<NioChannel> {
                     // Process the request from this socket
                     if (event == null) {
                         state = getHandler().process(socketWrapper, SocketEvent.OPEN_READ);
-                    } else {
+                    }
+
+                    // event不为空的情况，比如异步请求完成后，会重新通过endpoint触发process操作，process中
+                    else {
                         state = getHandler().process(socketWrapper, event);
                     }
                     if (state == SocketState.CLOSED) {

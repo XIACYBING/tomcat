@@ -1211,6 +1211,8 @@ public interface Context extends Container, ContextBind {
      * Notify all {@link javax.servlet.ServletRequestListener}s that a request
      * has ended.
      *
+     * 发布Request销毁事件给感兴趣的监听器
+     *
      * @param request The request object that will be passed to the listener
      * @return <code>true</code> if the listeners fire successfully, else
      *         <code>false</code>
