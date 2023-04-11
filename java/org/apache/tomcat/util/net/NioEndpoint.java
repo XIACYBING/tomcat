@@ -82,6 +82,11 @@ public class NioEndpoint extends AbstractJsseEndpoint<NioChannel> {
 
     /**
      * Server socket "pointer".
+     *
+     * 服务器套接字，被多个{@link Acceptor}线程共享，每个{@link Acceptor}线程会调用{@link ServerSocketChannel#accept()}方法等待外部请求的连接
+     *
+     * 如果有大量连接同时进入，{@link Acceptor}线程被耗尽，那么其他的连接会先pending，等待{@link Acceptor}线程的空闲：本质是因为如果没有调用
+     * {@link ServerSocketChannel#accept()}，那么连接就会暂时pending
      */
     private ServerSocketChannel serverSock = null;
 
@@ -250,6 +255,7 @@ public class NioEndpoint extends AbstractJsseEndpoint<NioChannel> {
 
             initializeConnectionLatch();
 
+            // 新建并启动Poller线程
             // Start poller threads
             pollers = new Poller[getPollerThreadCount()];
             for (int i=0; i<pollers.length; i++) {
@@ -260,6 +266,7 @@ public class NioEndpoint extends AbstractJsseEndpoint<NioChannel> {
                 pollerThread.start();
             }
 
+            // 启动Acceptor线程
             startAcceptorThreads();
         }
     }
@@ -369,24 +376,37 @@ public class NioEndpoint extends AbstractJsseEndpoint<NioChannel> {
         // Process the connection
         try {
             //disable blocking, APR style, we are gonna be polling it
+            // 配置非阻塞
             socket.configureBlocking(false);
             Socket sock = socket.socket();
+
+            // 将配置的属性，附加给当前的socket：receiveBufferSize、sendBufferSize、keepAlive...
             socketProperties.setProperties(sock);
 
-            // 根据不同属性包装socket到Channel中
+            // 从对象池nioChannels中获取一个channel
             NioChannel channel = nioChannels.pop();
+
+            // 如果为空，说明当前没有可用的channel，需要新建
             if (channel == null) {
+
+                // 先根据属性新建一个SocketBufferHandler
                 SocketBufferHandler bufhandler = new SocketBufferHandler(
                         socketProperties.getAppReadBufSize(),
                         socketProperties.getAppWriteBufSize(),
                         socketProperties.getDirectBuffer());
+
+                // 新建channel，新建时会关联当前socket，根据isSsl创建不同类型的Channel
                 if (isSSLEnabled()) {
                     channel = new SecureNioChannel(socket, bufhandler, selectorPool, this);
                 } else {
                     channel = new NioChannel(socket, bufhandler);
                 }
             } else {
+
+                // 关联当前socket
                 channel.setIOChannel(socket);
+
+                // 重置channel中的相关信息，避免上次请求的信息遗留
                 channel.reset();
             }
 
@@ -456,6 +476,19 @@ public class NioEndpoint extends AbstractJsseEndpoint<NioChannel> {
                     try {
 
                         // 监听客户端请求
+                        // 请求最终有三层处理：
+                        // 1、Acceptor线程监听连接
+                        // 2、Poller线程包装Socket为SocketProcessorBase（Runnable的实现类），并提交给Endpoint的Executor执行
+                        // 3、SocketProcessorBase.doRun方法开始处理请求
+                        //  3.1、doRun方法中会获取Handler（Protocol中的Handler），调用process方法，处理协议层级的一些内容并关联processor，调用processor
+                        //  .process方法处理SocketWrapperBase<S>和SocketEvent
+
+                        //  3.2、processor.process方法中根据状态处理数据，并在需要处理请求时调用service方法处理协议，比如Http11Processor
+                        //  .service处理Http协议，Http11Processor.service会处理Http请求数据和响应数据（转换请求头），生成Tomcat的Request和Response
+
+                        //  3.3、在service方法中调用Adapter（CoyoteAdapter）.service，将Tomcat的Request和Response
+                        //  转换为标准的ServletRequest和ServletResponse，然后交给容器进行处理
+
                         // Accept the next incoming connection from the server
                         // socket
                         socket = serverSock.accept();
@@ -477,7 +510,7 @@ public class NioEndpoint extends AbstractJsseEndpoint<NioChannel> {
                     // Configure the socket
                     if (running && !paused) {
 
-                        // setSocketOptions()中会将socket交给合适的处理器去处理请求，如果失败（返回false），则关闭对应的处理器
+                        // setSocketOptions()中会将socket交给合适的处理器去处理请求，如果失败（返回false），则关闭对应的socket/套接字
                         // setSocketOptions() will hand the socket off to
                         // an appropriate processor if successful
                         if (!setSocketOptions(socket)) {
@@ -662,12 +695,20 @@ public class NioEndpoint extends AbstractJsseEndpoint<NioChannel> {
             selector.wakeup();
         }
 
+        /**
+         * 添加Poller事件
+         *
+         * 调用当前方法的是另一个线程，向{@link Poller}对象中添加一个{@link PollerEvent}，然后通过{@link Selector#wakeup()}唤醒正在通过
+         * {@link Selector#select}相关方法进行就绪通道等待的{@code Poller线程}
+         */
         private void addEvent(PollerEvent event) {
 
             // 添加event到事件集合中
             events.offer(event);
 
-            // 如果wakeupCounter为-1，说明当前线程的selector正在调用select相关的方法，并正在阻塞中，需要被从阻塞中唤醒
+            // 如果incrementAndGet返回0，说明原值是-1，代表Poller线程可能已经正在通过select方法等待通道就绪，也就是需要被唤醒
+            // 如果incrementAndGet返回非0（只会返回大于0，不会小于0），说明有其他线程也在向当前Poller的events对象中添加event，且比当前线程先添加，
+            // 那么那个线程就会调用wakeup，当前线程就不需要调用wakeup了
             if ( wakeupCounter.incrementAndGet() == 0 ) {
                 selector.wakeup();
             }
@@ -700,6 +741,10 @@ public class NioEndpoint extends AbstractJsseEndpoint<NioChannel> {
         /**
          * Processes events in the event queue of the Poller.
          *
+         * 处理当前{@link #events}中存在的{@link PollerEvent}，执行{@link PollerEvent#run()}，如果{@link PollerEvent#interestOps}是
+         * {@link NioEndpoint#OP_REGISTER}，那就会将{@link PollerEvent#socketWrapper}注册到当前{@link Poller#selector}上，这样就可以通过
+         * {@link Selector#select}相关方法获取数据
+         *
          * @return <code>true</code> if some events were processed,
          *   <code>false</code> if queue was empty
          */
@@ -712,6 +757,7 @@ public class NioEndpoint extends AbstractJsseEndpoint<NioChannel> {
                 try {
 
                     // 执行PollerEvent的run方法，可能是注册Channel到通道中，也可能是更新Channel感兴趣的事件
+                    // 正常请求链路中，是将对应的Socket/网络套接字注册到当前Poller对应的selector中，这样Selector.select相关方法就会获取到值
                     pe.run();
 
                     // 执行完成后，如果当前Endpoint状态还正常，则将当前PollerEvent加入eventCache集合中，方便Acceptor在后续的流程中复用PollerEvent对象
@@ -734,10 +780,10 @@ public class NioEndpoint extends AbstractJsseEndpoint<NioChannel> {
          */
         public void register(final NioChannel socket) {
 
-            // 关联当前Poller
+            // socket/channel关联当前Poller
             socket.setPoller(this);
 
-            // 包装SocketChannel，wrapper和SocketChannel互相关联
+            // 包装SocketChannel，wrapper和SocketChannel互相关联，并根据SocketProperties设置相关属性
             NioSocketWrapper ka = new NioSocketWrapper(socket, NioEndpoint.this);
             socket.setSocketWrapper(ka);
             ka.setPoller(this);
@@ -755,14 +801,18 @@ public class NioEndpoint extends AbstractJsseEndpoint<NioChannel> {
             // this is what OP_REGISTER turns into.
             ka.interestOps(SelectionKey.OP_READ);
 
-            // 如果获取到的PollerEvent为空，则重新创建，否则直接将SocketChannel和对应的wrapper设置到PollerEvent中
+            // 如果获取到的PollerEvent为空，则需要新建一个（新建的时候关联socket、NioSocketWrapper并设置interestOps）
             if ( r==null) {
                 r = new PollerEvent(socket,ka,OP_REGISTER);
-            } else {
+            }
+
+            // 否则说明有对象缓存可以使用，直接将SocketChannel和对应的wrapper设置到PollerEvent中
+            else {
                 r.reset(socket,ka,OP_REGISTER);
             }
 
-            // 添加PollerEvent到事件集合中，并唤醒selector所在的Poller线程
+            // 添加PollerEvent到事件集合中，并唤醒selector（Poller线程上会关联有一个selector，没有任务需要处理的时候
+            // 会通过selector.select相关的方法进行休眠，等待有任务的时候被唤醒）
             addEvent(r);
         }
 
@@ -832,22 +882,35 @@ public class NioEndpoint extends AbstractJsseEndpoint<NioChannel> {
                 try {
                     if (!close) {
 
-                        // 判断当前是否有PollerEvent
+                        // 将当前已有的PollerEvent数据处理掉：其实就是将PollerEvent关联的客户端SocketChannel注册到当前Poller的selector上
+                        // 然后在下面的select逻辑中等待IO事件
                         hasEvents = events();
 
-                        // 获取wakeupCounter的值，如果大于0，说明有多个PollerEvent被并发放入events集合中，可以直接调用selectNow获取就绪的通道数量
+                        // 需要注意的一点是：以下通过select相关方法获取keyCount时，返回的结果如果非0，代表在当前循环之前，通过events()
+                        // 方法注册到selector中的其他客户端SocketChannel，正在产生IO事件
+
+                        // 如果wakeupCounter.getAndSet(-1)的结果大于0，说明在上一次循环过程中，有PollerEvents被添加到events集合中，并且在上面一行的events
+                        // ()中被处理掉了，因此此处要先调用一次selectNow方法，检查当前是否有就绪的IO事件（极大概率有，就算没有也可以通过下面的hasEvent逻辑再次调用events()
+                        // 方法，处理掉新增的events数据），避免之前从events()方法中注册到selector上的新SocketChannel上被延迟处理（下一次循环处理）或者遗漏
+
+                        // PollerEvent先被添加到events集合中，然后wakeupCounter自增设置，最后selector
+                        // .wakeup被调用，这三个操作非原子操作，因此可能导致，新添加进来的PollerEvent被添加到events中，还没被events()
+                        // 方法处理了，这时候最好是通过selectNow方法，快速判断当前是否有就绪的IO事件，如果没有，就继续循环中的逻辑（主要是要快速把已经加入events集合中的PollerEvent
+                        // 处理掉，避免无谓的等待，减少IO消耗，提高性能）
                         if (wakeupCounter.getAndSet(-1) > 0) {
                             //if we are here, means we have other stuff to do
                             //do a non blocking select
-                            // 直接非阻塞的获取就绪的通道数量
+                            // 直接非阻塞的获取就绪的通道数量，如果没有就绪的通道，会直接返回
                             keyCount = selector.selectNow();
-                        } else {
+                        }
 
-                            // 否则就阻塞式的等待有通道就绪，调用wakeup唤醒selector，或者等待超时
+                        // 否则就说明当前没有event需要处理，阻塞式的等待有通道就绪，等待外部调用wakeup唤醒selector，或者等待超时
+                        else {
                             keyCount = selector.select(selectorTimeout);
                         }
 
-                        // selector被就绪通道唤醒，或超时
+                        // selector被就绪通道唤醒，或超时，说明当前正在处理中，外部线程就算向events中添加了event，
+                        // 也不会调用selector.wakeup方法，因为不需要进行Poller线程的唤醒
                         wakeupCounter.set(0);
                     }
 
@@ -868,8 +931,13 @@ public class NioEndpoint extends AbstractJsseEndpoint<NioChannel> {
                     continue;
                 }
 
-                // 不管是因为超时还是有事件而醒来，先处理事件
-                // keyCount等于0一般是代表超时醒来
+                // keyCount等于0，有两种可能：
+                // 1、因为外部先向events中添加PollerEvent导致进入了selectNow逻辑，但是此时并没有就绪的IO事件，
+                // 2、正常的进行select逻辑，因超时或selector.wakeup导致select被中断
+
+                // hasEvent的说明：
+                // 1、hasEvent为true：说明之前添加到events中的PollerEvent可能已经被hasEvent的赋值方法events()处理掉了，因此不需要额外再调用events()方法再处理一次
+                // 2、hasEvent为false：说明之前添加到events中的PollerEvent肯定没有被处理过，因此需要调用events()方法处理还未处理的PollerEvent
                 // either we timed out or we woke up, process events first
                 if ( keyCount == 0 ) {
                     hasEvents = (hasEvents | events());
@@ -896,7 +964,8 @@ public class NioEndpoint extends AbstractJsseEndpoint<NioChannel> {
                     } else {
                         iterator.remove();
 
-                        // 处理SelectionKey
+                        // 处理SelectionKey，最终是将读写事件提交给各个Endpoint中Processor的实现类去处理，Processor是Runnable的实现类，将Processor
+                        // 提交给Endpoint的Executor来处理
                         processKey(sk, attachment);
                     }
                 }//while

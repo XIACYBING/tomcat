@@ -1034,13 +1034,24 @@ public abstract class AbstractEndpoint<S> {
         int count = getAcceptorThreadCount();
         acceptors = new Acceptor[count];
 
+        // 根据acceptorCount启动响应数据的线程，并配置对应的属性
         for (int i = 0; i < count; i++) {
+
+            // 创建Acceptor（继承了Runnable）
             acceptors[i] = createAcceptor();
+
+            // 设置线程名称
             String threadName = getName() + "-Acceptor-" + i;
             acceptors[i].setThreadName(threadName);
+
+            // 新建线程
             Thread t = new Thread(acceptors[i], threadName);
+
+            // 设置线程优先级，是否守护线程
             t.setPriority(getAcceptorThreadPriority());
             t.setDaemon(getDaemon());
+
+            // 启动线程
             t.start();
         }
     }
