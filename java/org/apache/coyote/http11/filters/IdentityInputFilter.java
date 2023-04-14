@@ -17,16 +17,16 @@
 
 package org.apache.coyote.http11.filters;
 
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-
 import org.apache.coyote.InputBuffer;
 import org.apache.coyote.Request;
 import org.apache.coyote.http11.InputFilter;
 import org.apache.tomcat.util.buf.ByteChunk;
 import org.apache.tomcat.util.net.ApplicationBufferHandler;
 import org.apache.tomcat.util.res.StringManager;
+
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Identity input filter.
@@ -137,6 +137,8 @@ public class IdentityInputFilter implements InputFilter, ApplicationBufferHandle
 
         if (contentLength >= 0) {
             if (remaining > 0) {
+
+                // 读取字节数组，其实是将Http11InputBuffer中的byteBuffer内容复制到handler中
                 int nRead = buffer.doRead(handler);
                 if (nRead > remaining) {
                     // The chunk is longer than the number of bytes remaining

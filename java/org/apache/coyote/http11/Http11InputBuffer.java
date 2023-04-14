@@ -16,6 +16,7 @@
  */
 package org.apache.coyote.http11;
 
+import org.apache.coyote.AbstractProtocol;
 import org.apache.coyote.InputBuffer;
 import org.apache.coyote.Request;
 import org.apache.juli.logging.Log;
@@ -54,12 +55,17 @@ public class Http11InputBuffer implements InputBuffer, ApplicationBufferHandler 
 
     /**
      * Associated Coyote request.
+     *
+     * 被解析出的Request实体（非标准的ServletRequest），当前Request会与{@link Http11Processor#request}关联，而{@link Http11Processor}
+     * 则会被对象池技术缓存在{@link AbstractProtocol.ConnectionHandler#recycledProcessors}中，以便在整个生命周期中被复用
      */
     private final Request request;
 
 
     /**
      * Headers of the associated request.
+     *
+     * 存储请求头的字段
      */
     private final MimeHeaders headers;
 
@@ -78,6 +84,15 @@ public class Http11InputBuffer implements InputBuffer, ApplicationBufferHandler 
 
     /**
      * The read buffer.
+     *
+     * 读取数据的字节缓存块：数据从{@link #wrapper}中读取出来，然后解析成各种数据，赋值{@link #request}中，请求头则设置到{@link #headers}中
+     *
+     * 一般来说，可以一次性将数据都读取到{@link #byteBuffer}中，然后解析读取；
+     *
+     * 1、在{@link #parseRequestLine}中解析请求行（请求方法、uri和protocol）；
+     * 2、在{@link #parseHeaders}中解析请求头
+     * 3、在{@link SocketInputBuffer#doRead(ApplicationBufferHandler)}中将剩余的数据复制给入参的{@link ApplicationBufferHandler}
+     * ，并指明body数据在字节数组中的位置，方便外部解析
      */
     private ByteBuffer byteBuffer;
 
@@ -251,10 +266,16 @@ public class Http11InputBuffer implements InputBuffer, ApplicationBufferHandler 
     @Override
     public int doRead(ApplicationBufferHandler handler) throws IOException {
 
-        if (lastActiveFilter == -1)
+        // 如果没有过滤器，则直接调用SocketInputBuffer#doRead
+        if (lastActiveFilter == -1) {
             return inputStreamInputBuffer.doRead(handler);
-        else
+        }
+
+        // 否则通过过滤器过滤后，在过滤器中调用SocketInputBuffer#doRead读取
+        // 比如：IdentityInputFilter
+        else {
             return activeFilters[lastActiveFilter].doRead(handler);
+        }
 
     }
 
@@ -333,6 +354,8 @@ public class Http11InputBuffer implements InputBuffer, ApplicationBufferHandler 
      * HTTP request header parsing. Do NOT attempt to read the request body
      * using it.
      *
+     * 请求行解析，包含：请求方法（GET/POST...）、请求uri（/xxx/yyy?A=B）、协议（Http 1.1）
+     *
      * @throws IOException If an exception occurs during the underlying socket
      * read operations, or if the given buffer is not big enough to accommodate
      * the whole line.
@@ -394,9 +417,11 @@ public class Http11InputBuffer implements InputBuffer, ApplicationBufferHandler 
             parsingRequestLinePhase = 2;
             if (log.isDebugEnabled()) {
                 log.debug("Received ["
-                        + new String(byteBuffer.array(), byteBuffer.position(), byteBuffer.remaining(), StandardCharsets.ISO_8859_1) + "]");
+                    + new String(byteBuffer.array(), byteBuffer.position(), byteBuffer.remaining(), StandardCharsets.ISO_8859_1) + "]");
             }
         }
+
+        // Http请求方法的解析：GET/POST/HEAD/DELETE/OPTION...
         if (parsingRequestLinePhase == 2) {
             //
             // Reading the method name
@@ -406,8 +431,12 @@ public class Http11InputBuffer implements InputBuffer, ApplicationBufferHandler 
             while (!space) {
                 // Read new bytes if needed
                 if (byteBuffer.position() >= byteBuffer.limit()) {
-                    if (!fill(false)) // request line parsing
+
+                    // fill方法会将socket中的数据读取到byteBuffer中
+                    // request line parsing
+                    if (!fill(false)) {
                         return false;
+                    }
                 }
                 // Spec says method name is a token followed by a single SP but
                 // also be tolerant of multiple SP and/or HT.
@@ -416,7 +445,7 @@ public class Http11InputBuffer implements InputBuffer, ApplicationBufferHandler 
                 if (chr == Constants.SP || chr == Constants.HT) {
                     space = true;
                     request.method().setBytes(byteBuffer.array(), parsingRequestLineStart,
-                            pos - parsingRequestLineStart);
+                        pos - parsingRequestLineStart);
                 } else if (!HttpParser.isToken(chr)) {
                     byteBuffer.position(byteBuffer.position() - 1);
                     throw new IllegalArgumentException(sm.getString("iib.invalidmethod"));
@@ -424,6 +453,8 @@ public class Http11InputBuffer implements InputBuffer, ApplicationBufferHandler 
             }
             parsingRequestLinePhase = 3;
         }
+
+        // 空行解析
         if (parsingRequestLinePhase == 3) {
             // Spec says single SP but also be tolerant of multiple SP and/or HT
             boolean space = true;
@@ -442,6 +473,8 @@ public class Http11InputBuffer implements InputBuffer, ApplicationBufferHandler 
             parsingRequestLineStart = byteBuffer.position();
             parsingRequestLinePhase = 4;
         }
+
+        // Http请求的uri和queryString的解析
         if (parsingRequestLinePhase == 4) {
             // Mark the current buffer position
 
@@ -472,17 +505,21 @@ public class Http11InputBuffer implements InputBuffer, ApplicationBufferHandler 
                     throw new IllegalArgumentException(sm.getString("iib.invalidRequestTarget"));
                 }
             }
+
+            // url上的queryString值设置
             if (parsingRequestLineQPos >= 0) {
                 request.queryString().setBytes(byteBuffer.array(), parsingRequestLineQPos + 1,
-                        end - parsingRequestLineQPos - 1);
+                    end - parsingRequestLineQPos - 1);
                 request.requestURI().setBytes(byteBuffer.array(), parsingRequestLineStart,
-                        parsingRequestLineQPos - parsingRequestLineStart);
+                    parsingRequestLineQPos - parsingRequestLineStart);
             } else {
                 request.requestURI().setBytes(byteBuffer.array(), parsingRequestLineStart,
-                        end - parsingRequestLineStart);
+                    end - parsingRequestLineStart);
             }
             parsingRequestLinePhase = 5;
         }
+
+        // 空行解析
         if (parsingRequestLinePhase == 5) {
             // Spec says single SP but also be tolerant of multiple and/or HT
             boolean space = true;
@@ -504,6 +541,8 @@ public class Http11InputBuffer implements InputBuffer, ApplicationBufferHandler 
             // Mark the current buffer position
             end = 0;
         }
+
+        // 协议/protocol解析
         if (parsingRequestLinePhase == 6) {
             //
             // Reading the protocol
@@ -532,7 +571,7 @@ public class Http11InputBuffer implements InputBuffer, ApplicationBufferHandler 
 
             if ((end - parsingRequestLineStart) > 0) {
                 request.protocol().setBytes(byteBuffer.array(), parsingRequestLineStart,
-                        end - parsingRequestLineStart);
+                    end - parsingRequestLineStart);
             } else {
                 request.protocol().setString("");
             }
@@ -543,12 +582,13 @@ public class Http11InputBuffer implements InputBuffer, ApplicationBufferHandler 
             return true;
         }
         throw new IllegalStateException(
-                "Invalid request line parse phase:" + parsingRequestLinePhase);
+            "Invalid request line parse phase:" + parsingRequestLinePhase);
     }
-
 
     /**
      * Parse the HTTP headers.
+     *
+     * 解析请求头
      */
     boolean parseHeaders() throws IOException {
         if (!parsingHeader) {
@@ -558,6 +598,8 @@ public class Http11InputBuffer implements InputBuffer, ApplicationBufferHandler 
         HeaderParseStatus status = HeaderParseStatus.HAVE_MORE_HEADERS;
 
         do {
+
+            // 真正执行请求头解析的地方，parseHeader方法每次只会解析出一个请求头，循环调用直到请求头解析完成
             status = parseHeader();
             // Checking that
             // (1) Headers plus request line size does not exceed its limit
@@ -699,6 +741,8 @@ public class Http11InputBuffer implements InputBuffer, ApplicationBufferHandler 
     /**
      * Attempts to read some data into the input buffer.
      *
+     * 从{@link #wrapper}中读取数据到{@link #byteBuffer}中，方便外部解析
+     *
      * @return <code>true</code> if more data was added to the input buffer
      *         otherwise <code>false</code>
      */
@@ -717,13 +761,23 @@ public class Http11InputBuffer implements InputBuffer, ApplicationBufferHandler 
             byteBuffer.position(byteBuffer.limit());
         }
         byteBuffer.limit(byteBuffer.capacity());
+
+        // 从wrapper中读取数据到byteBuffer中
         int nRead = wrapper.read(block, byteBuffer);
         byteBuffer.limit(byteBuffer.position()).reset();
+
+        // 有正常的读取出数据
         if (nRead > 0) {
             return true;
-        } else if (nRead == -1) {
+        }
+
+        // nRead读取结果为-1，代表客户端连接已断开
+        else if (nRead == -1) {
             throw new EOFException(sm.getString("iib.eof.error"));
-        } else {
+        }
+
+        // 读取出字节数为0
+        else {
             return false;
         }
 
@@ -732,6 +786,8 @@ public class Http11InputBuffer implements InputBuffer, ApplicationBufferHandler 
 
     /**
      * Parse an HTTP header.
+     *
+     * 解析一个请求头，直解析一个，会不断调用当前方法，直至请求头全部被解析
      *
      * @return false after reading a blank line (which indicates that the
      * HTTP header parsing is done
@@ -775,13 +831,16 @@ public class Http11InputBuffer implements InputBuffer, ApplicationBufferHandler 
         //
         // Reading the header name
         // Header name is always US-ASCII
-        //
+        // 读取请求头名称，只解析请求头
 
         while (headerParsePos == HeaderParsePosition.HEADER_NAME) {
 
             // Read new bytes if needed
             if (byteBuffer.position() >= byteBuffer.limit()) {
-                if (!fill(false)) { // parse header
+
+                // 读取请求头数据
+                // parse header
+                if (!fill(false)) {
                     return HeaderParseStatus.NEED_MORE_DATA;
                 }
             }
@@ -790,6 +849,8 @@ public class Http11InputBuffer implements InputBuffer, ApplicationBufferHandler 
             chr = byteBuffer.get();
             if (chr == Constants.COLON) {
                 headerParsePos = HeaderParsePosition.HEADER_VALUE_START;
+
+                // 创建MimeHeaderField，并将请求头name放入，将用来保存value的MessageBytes返回出来，在下面的链路会处理
                 headerData.headerValue = headers.addValue(byteBuffer.array(), headerData.start,
                         pos - headerData.start);
                 pos = byteBuffer.position();
@@ -902,9 +963,13 @@ public class Http11InputBuffer implements InputBuffer, ApplicationBufferHandler 
                 }
             }
         }
+
+        // 将读取出来的请求头对应的值，设置进去
         // Set the header value
         headerData.headerValue.setBytes(byteBuffer.array(), headerData.start,
                 headerData.lastSignificantChar - headerData.start);
+
+        // headerData回收，返回出去，开始进行下一个请求头的读取
         headerData.recycle();
         return HeaderParseStatus.HAVE_MORE_HEADERS;
     }
@@ -1071,8 +1136,13 @@ public class Http11InputBuffer implements InputBuffer, ApplicationBufferHandler 
                     return -1;
             }
 
+            // 获取http请求中剩余可读取的字节数（即body的字节长度）
             int length = byteBuffer.remaining();
+
+            // 将http请求的字节缓存，赋值一份给handler（底层的字节数组还是共用的）
             handler.setByteBuffer(byteBuffer.duplicate());
+
+            // 因为将剩余的数据复制给其他处理器，此处认为byteBuffer的数据已经被读取，设置position为limit，标记数据已经被完全读取完
             byteBuffer.position(byteBuffer.limit());
 
             return length;

@@ -16,19 +16,7 @@
  */
 package org.apache.coyote.http11;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
-import java.util.StringTokenizer;
-import java.util.concurrent.ConcurrentHashMap;
-
-import javax.servlet.http.HttpUpgradeHandler;
-
+import org.apache.catalina.connector.CoyoteAdapter;
 import org.apache.coyote.AbstractProtocol;
 import org.apache.coyote.Processor;
 import org.apache.coyote.UpgradeProtocol;
@@ -42,6 +30,25 @@ import org.apache.tomcat.util.net.SSLHostConfig;
 import org.apache.tomcat.util.net.SocketWrapperBase;
 import org.apache.tomcat.util.res.StringManager;
 
+import javax.servlet.http.HttpUpgradeHandler;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.StringTokenizer;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * {@link AbstractEndpoint}：检测客户端连接
+ * {@link AbstractHttp11Protocol}：提供{@link Http11Processor}管理能力，并对{@link SocketWrapperBase}连接相关的内容提供管理能力
+ * {@link Http11Processor}：提供解析Http协议的能力
+ * {@link CoyoteAdapter}：提供适配{@link org.apache.catalina.connector.Request}和{@link javax.servlet.ServletRequest}
+ * 的能力，映射容器，以及调用容器处理的能力
+ */
 public abstract class AbstractHttp11Protocol<S> extends AbstractProtocol<S> {
 
     protected static final StringManager sm =

@@ -585,6 +585,8 @@ public final class Request {
      * @throws IOException If an I/O error occurs during the copy
      */
     public int doRead(ApplicationBufferHandler handler) throws IOException {
+
+        // 读取数据到handler中：此处的inputBuffer是Http11InputBuffer
         int n = inputBuffer.doRead(handler);
         if (n > 0) {
             bytesRead+=n;

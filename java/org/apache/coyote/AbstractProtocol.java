@@ -16,6 +16,7 @@
  */
 package org.apache.coyote;
 
+import org.apache.coyote.http11.Http11Processor;
 import org.apache.juli.logging.Log;
 import org.apache.tomcat.InstanceManager;
 import org.apache.tomcat.util.ExceptionUtils;
@@ -755,6 +756,16 @@ public abstract class AbstractProtocol<S> implements ProtocolHandler,
         private final RequestGroupInfo global = new RequestGroupInfo();
         private final AtomicLong registerCount = new AtomicLong(0);
         private final Map<S,Processor> connections = new ConcurrentHashMap<>();
+
+        /**
+         * {@link SynchronizedStack}的子类，{@link Processor}的对象池
+         * 从{@link Processor}开始，以{@link Http11Processor}为例，会关联以下内容：
+         *  1、{@link AbstractProcessor#request}、
+         *  2、{@link AbstractProcessor#response}
+         *  3、{@link Http11Processor#inputBuffer}
+         *  4、{@link Http11Processor#outputBuffer}
+         * 而以上这些内容可能存在一些占用较大内存的数组数据，需要注意
+         */
         private final RecycledProcessors recycledProcessors = new RecycledProcessors(this);
 
         public ConnectionHandler(AbstractProtocol<S> proto) {

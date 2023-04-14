@@ -16,20 +16,6 @@
  */
 package org.apache.catalina.connector;
 
-import java.io.IOException;
-import java.io.Reader;
-import java.nio.Buffer;
-import java.nio.ByteBuffer;
-import java.nio.CharBuffer;
-import java.nio.charset.Charset;
-import java.security.AccessController;
-import java.security.PrivilegedActionException;
-import java.security.PrivilegedExceptionAction;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-
-import javax.servlet.ReadListener;
-
 import org.apache.catalina.security.SecurityUtil;
 import org.apache.coyote.ActionCode;
 import org.apache.coyote.ContainerThreadMarker;
@@ -41,6 +27,19 @@ import org.apache.tomcat.util.buf.ByteChunk;
 import org.apache.tomcat.util.collections.SynchronizedStack;
 import org.apache.tomcat.util.net.ApplicationBufferHandler;
 import org.apache.tomcat.util.res.StringManager;
+
+import javax.servlet.ReadListener;
+import java.io.IOException;
+import java.io.Reader;
+import java.nio.Buffer;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.Charset;
+import java.security.AccessController;
+import java.security.PrivilegedActionException;
+import java.security.PrivilegedExceptionAction;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * The buffer used by Tomcat request. This is a derivative of the Tomcat 3.3
@@ -323,8 +322,10 @@ public class InputBuffer extends Reader
             state = BYTE_STATE;
         }
 
+        // 将body数据读取中当前对象实例中
         int result = coyoteRequest.doRead(this);
 
+        // 返回读取到的字节数
         return result;
     }
 
@@ -346,11 +347,18 @@ public class InputBuffer extends Reader
             throw new IOException(sm.getString("inputBuffer.streamClosed"));
         }
 
+        // 读取body数据
         if (checkByteBufferEof()) {
             return -1;
         }
+
+        // 判断当前要读取的字节长度和bb中剩余的字节长度哪个更小，从而决定要读取多少字节的数据
         int n = Math.min(len, bb.remaining());
+
+        // 根据计算结果在bb中读取数据
         bb.get(b, off, n);
+
+        // 返回读取到的字节数
         return n;
     }
 
@@ -638,8 +646,14 @@ public class InputBuffer extends Reader
 
 
     private boolean checkByteBufferEof() throws IOException {
+
+        // 如果bb中没有数据，说明当前需要去读取字节数据：比如body的字节数据
         if (bb.remaining() == 0) {
+
+            // 读取body字节数据，并返回读取到的字节数
             int n = realReadBytes();
+
+            // 小于0，说明数据读取异常
             if (n < 0) {
                 return true;
             }

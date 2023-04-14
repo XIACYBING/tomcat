@@ -685,13 +685,14 @@ public class Http11Processor extends AbstractProcessor {
         boolean keptAlive = false;
         SendfileState sendfileState = SendfileState.DONE;
 
+        // 此处只进行请求行和请求头的解析，body不解析，等业务代码调用request.getInputStream时，再去Http11InputBuffer中的byteBuffer上获取
         while (!getErrorState().isError() && keepAlive && !isAsync() && upgradeToken == null &&
                 sendfileState == SendfileState.DONE && !endpoint.isPaused()) {
 
             // Parsing the request header
             try {
 
-                // 转换请求头
+                // 转换请求行（只有uri、请求方法和协议，没有请求头，请求头在下面解析）：将数据从socket中读取出来并解析设置到request和inputBuffer中
                 if (!inputBuffer.parseRequestLine(keptAlive)) {
                     if (inputBuffer.getParsingRequestLinePhase() == -1) {
                         return SocketState.UPGRADING;
@@ -708,6 +709,8 @@ public class Http11Processor extends AbstractProcessor {
                     keptAlive = true;
                     // Set this every time in case limit has been changed via JMX
                     request.getMimeHeaders().setLimit(endpoint.getMaxHeaderCount());
+
+                    // 解析Http请求头
                     if (!inputBuffer.parseHeaders()) {
                         // We've read part of the request, don't recycle it
                         // instead associate it with the socket
