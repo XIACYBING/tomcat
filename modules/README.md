@@ -1,0 +1,2 @@
+## 如何处理当前模块（jdbc-pool）
+Project Structure -> Project Settings -> Modules -> + -> import module -> 选定`jdbc-pool`文件夹，点击`OK` -> 选择`import module from external model` ，选择`Maven`，点击`Finish` -> 点击`OK` -> 等待新模块的导入即可 

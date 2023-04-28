@@ -1486,6 +1486,8 @@ public class Http11Processor extends AbstractProcessor {
         // Finish the handling of the request
         if (getErrorState().isIoAllowed()) {
             try {
+
+                // 结束请求
                 inputBuffer.endRequest();
             } catch (IOException e) {
                 setErrorState(ErrorState.CLOSE_CONNECTION_NOW, e);
@@ -1502,6 +1504,8 @@ public class Http11Processor extends AbstractProcessor {
         if (getErrorState().isIoAllowed()) {
             try {
                 action(ActionCode.COMMIT, null);
+
+                // 对Http11OutputBuffer刷新剩余的响应数据，并设置响应完成的flag
                 outputBuffer.finishResponse();
             } catch (IOException e) {
                 setErrorState(ErrorState.CLOSE_CONNECTION_NOW, e);

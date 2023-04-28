@@ -57,36 +57,59 @@ public class Http11OutputBuffer implements OutputBuffer {
 
     /**
      * Associated Coyote response.
+     *
+     * 关联的Tomcat解析出的Response，非标准ServletResponse{@link javax.servlet.ServletResponse}
      */
     protected Response response;
 
 
     /**
      * Finished flag.
+     *
+     * 当前响应是否完成的flag：正常流程中，会在构造器{@link #Http11OutputBuffer}和{@link #nextRequest()}方法中被设置为{@code false}，并在请求完成时，在
+     * {@link #finishResponse()}中被设置为{@code true}
      */
     protected boolean responseFinished;
 
 
     /**
      * The buffer used for header composition.
+     *
+     * 存储响应头的字节缓存块，操作归类如下：
+     * 初始化：{@link #Http11OutputBuffer}
+     * 数据写入：
+     *  {@link #sendStatus()}
+     *  {@link #sendHeader(MessageBytes, MessageBytes)}
+     *  {@link #endHeaders()}
+     *  {@link #write}
+     * 数据提交：{@link #commit()}
+     * 数据重置：
+     *  {@link #resetHeaderBuffer()}
+     *  {@link #nextRequest()}
      */
     protected final ByteBuffer headerBuffer;
 
 
     /**
      * Filter library for processing the response body.
+     *
+     * 响应体的处理拦截器数组
      */
     protected OutputFilter[] filterLibrary;
 
 
     /**
      * Active filters for the current request.
+     *
+     * 对当前请求激活的拦截器数组
      */
     protected OutputFilter[] activeFilters;
 
 
     /**
      * Index of the last active filter.
+     *
+     * 最后一个激活的拦截器在{@link #activeFilters}数组中的索引
      */
     protected int lastActiveFilter;
 
@@ -323,16 +346,21 @@ public class Http11OutputBuffer implements OutputBuffer {
      * @throws IOException an underlying I/O error occurred
      */
     public void finishResponse() throws IOException {
+
+        // 响应完成flag已经设置为true，不处理
         if (responseFinished) {
             return;
         }
 
+        // 调用过滤器
         if (lastActiveFilter != -1) {
             activeFilters[lastActiveFilter].end();
         }
 
+        // 将当前缓存内剩余数据写入到Channel中
         flushBuffer(true);
 
+        // 响应完成flag设置为true
         responseFinished = true;
     }
 
