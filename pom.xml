@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"    
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"    
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 
     <parent>
@@ -15,7 +15,7 @@
 
     <name>tomcat</name>
     <url>http://localhost:8080</url>
-    
+
     <dependencies>
         <dependency>
             <groupId>org.easymock</groupId>
@@ -49,6 +49,12 @@
             <artifactId>ecj</artifactId>
             <version>4.6.1</version>
         </dependency>
+      <dependency>
+        <groupId>com.unboundid</groupId>
+        <artifactId>unboundid-ldapsdk</artifactId>
+        <version>3.2.0</version>
+        <scope>test</scope>
+      </dependency>
     </dependencies>
 
     <build>
@@ -79,5 +85,5 @@
             </plugin>
         </plugins>
     </build>
-    
+
 </project>
