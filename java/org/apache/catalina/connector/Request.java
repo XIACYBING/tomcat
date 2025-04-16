@@ -1137,6 +1137,7 @@ public class Request implements org.apache.catalina.servlet4preview.http.HttpSer
     public String getParameter(String name) {
 
         if (!parametersParsed) {
+            // 转换参数，比如解码
             parseParameters();
         }
 
@@ -3270,6 +3271,8 @@ public class Request implements org.apache.catalina.servlet4preview.http.HttpSer
                     parameters.setParseFailedReason(FailReason.CLIENT_DISCONNECT);
                     return;
                 }
+
+                // 处理参数，比如解码
                 parameters.processParameters(formData, 0, len);
             } else if ("chunked".equalsIgnoreCase(
                     coyoteRequest.getHeader("transfer-encoding"))) {
@@ -3298,6 +3301,7 @@ public class Request implements org.apache.catalina.servlet4preview.http.HttpSer
                     return;
                 }
                 if (formData != null) {
+                    // 处理参数，比如解码
                     parameters.processParameters(formData, 0, formData.length);
                 }
             }

@@ -16,16 +16,6 @@
  */
 package org.apache.tomcat.util.http;
 
-import java.io.IOException;
-import java.io.UnsupportedEncodingException;
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Enumeration;
-import java.util.LinkedHashMap;
-import java.util.Map;
-
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.buf.B2CConverter;
@@ -35,6 +25,16 @@ import org.apache.tomcat.util.buf.StringUtils;
 import org.apache.tomcat.util.buf.UDecoder;
 import org.apache.tomcat.util.log.UserDataHelper;
 import org.apache.tomcat.util.res.StringManager;
+
+import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Enumeration;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  *
@@ -300,6 +300,7 @@ public final class Parameters {
             do {
                 switch(bytes[pos]) {
                     case '=':
+                        // 参数名称匹配结束，开始匹配参数值
                         if (parsingName) {
                             // Name finished. Value starts from next character
                             nameEnd = pos;
@@ -323,6 +324,7 @@ public final class Parameters {
                         break;
                     case '%':
                     case '+':
+                        // 如果在参数中匹配到%和+号，说明参数名称或者参数值需要进行解码
                         // Decoding required
                         if (parsingName) {
                             decodeName = true;
@@ -417,6 +419,7 @@ public final class Parameters {
                 String name;
                 String value;
 
+                // 解码参数名称
                 if (decodeName) {
                     urlDecode(tmpName);
                 }
@@ -424,6 +427,8 @@ public final class Parameters {
                 name = tmpName.toString();
 
                 if (valueStart >= 0) {
+
+                    // 解码参数值
                     if (decodeValue) {
                         urlDecode(tmpValue);
                     }

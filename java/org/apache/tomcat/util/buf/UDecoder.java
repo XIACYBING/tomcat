@@ -16,6 +16,10 @@
  */
 package org.apache.tomcat.util.buf;
 
+import org.apache.juli.logging.Log;
+import org.apache.juli.logging.LogFactory;
+import org.apache.tomcat.util.res.StringManager;
+
 import java.io.ByteArrayOutputStream;
 import java.io.CharConversionException;
 import java.io.IOException;
@@ -24,11 +28,12 @@ import java.io.UnsupportedEncodingException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 
-import org.apache.juli.logging.Log;
-import org.apache.juli.logging.LogFactory;
-import org.apache.tomcat.util.res.StringManager;
-
 /**
+ * 所有URL的解码都在这里，比如url上的参数（queryString），浏览器传递给Tomcat时往往是编码后的，但是Tomcat容器传递给具体处理的框架（比如Spring）时，
+ * 传递的是解码后的数据，而解码的逻辑就在此处实现
+ *
+ * 不过参数解码是后置的，{@link org.apache.catalina.connector.Request#getParameter}被调用时才会开始解码
+ *
  *  All URL decoding happens here. This way we can reuse, review, optimize
  *  without adding complexity to the buffers.
  *
