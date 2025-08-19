@@ -16,6 +16,8 @@
  */
 package javax.servlet.http;
 
+import org.apache.tomcat.util.http.Rfc6265CookieProcessor;
+
 import java.io.Serializable;
 import java.text.MessageFormat;
 import java.util.BitSet;
@@ -177,6 +179,15 @@ public class Cookie implements Cloneable, Serializable {
     }
 
     /**
+     * A negative value means that the cookie is not stored persistently and
+     * will be deleted when the Web browser exits.
+     * <p>
+     * 以上这段内容被我摘抄出来，因为根据<a href="https://datatracker.ietf.org/doc/html/rfc6265#section-5.2.2">RFC-6262#The Max-Age Attribute</a>中说明的，
+     * 如果maxAge小于等于0，应该代表立即删除对应Cookie，而不是像上面说明的，当maxAge小于0，Cookie会变成一个Session Cookie（浏览器关闭后删除）；经过查阅文档，
+     * 大概能确认，Tomcat一些实现是基于<a href="https://datatracker.ietf.org/doc/html/rfc2965">RFC-2965</a>，以及结合
+     * <a href="https://web.archive.org/web/20020803110822/http://wp.netscape.com/newsref/std/cookie_spec.html">Netscape Cookie Spec</a>
+     * 进行考量，负值的maxAge作为SessionCookie而存在。
+     * <p>
      * Sets the maximum age of the cookie in seconds.
      * <p>
      * A positive value indicates that the cookie will expire after that many
@@ -191,6 +202,9 @@ public class Cookie implements Cloneable, Serializable {
      *            an integer specifying the maximum age of the cookie in
      *            seconds; if negative, means the cookie is not stored; if zero,
      *            deletes the cookie
+     *
+     * @see <a href="https://grok.com/share/bGVnYWN5LWNvcHk%3D_eec0b64b-b88f-4ed8-86f0-f045b563aad9">Cookie-maxAge</a>
+     * @see Rfc6265CookieProcessor#generateHeader(Cookie)
      * @see #getMaxAge
      */
     public void setMaxAge(int expiry) {
